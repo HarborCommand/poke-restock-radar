@@ -580,16 +580,16 @@
 }
 
 .customerRow {
-  grid-template-columns: 42px minmax(190px, 1.4fr) minmax(90px, 0.6fr) minmax(130px, 0.8fr) minmax(120px, 0.8fr) auto;
+  grid-template-columns: 40px minmax(0, 1.35fr) minmax(100px, 0.65fr) minmax(135px, 0.75fr) minmax(120px, 0.7fr) auto;
 }
 
 .saleRow {
-  grid-template-columns: 42px minmax(220px, 1.6fr) minmax(105px, 0.65fr) minmax(120px, 0.8fr) 60px minmax(100px, 0.65fr);
+  grid-template-columns: 40px minmax(0, 1.55fr) minmax(90px, 0.55fr) minmax(110px, 0.7fr) 70px minmax(95px, 0.55fr);
 }
 
 .customerRow + .customerRow,
 .saleRow + .saleRow {
-  border-top: 1px solid #efeeec;
+  border-top: 1px solid #f0efed;
 }
 
 .avatar,
@@ -599,11 +599,8 @@
 }
 
 .customerIdentity,
-.saleIdentity {
-  gap: 3px;
-}
-
 .customerMetric,
+.saleIdentity,
 .saleMetric,
 .saleTotal {
   gap: 2px;
@@ -612,16 +609,13 @@
 .customerMetric small,
 .saleMetric small,
 .saleTotal small {
-  color: #a8a29e;
+  color: #8a8580;
   font-size: 10px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.035em;
+  font-weight: 700;
 }
 
 .customerMetric strong,
-.saleMetric strong,
-.saleTotal strong {
+.saleMetric strong {
   overflow: hidden;
   color: #44403c;
   font-size: 12px;
@@ -637,8 +631,13 @@
 
 .saleTotal strong {
   color: #18181b;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 900;
+  white-space: nowrap;
+}
+
+.rowAction {
+  min-width: 92px;
 }
 
 .loadingCard,
@@ -647,83 +646,42 @@
   border: 1px solid #e7e5e4;
   border-radius: 12px;
   background: #fff;
-  padding: 28px;
+  padding: 24px;
   color: #78716c;
-  text-align: center;
   font-size: 13px;
   font-weight: 750;
 }
 
 .errorCard {
   border-color: #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
+  background: #fff7f7;
+  color: #b91c1c;
 }
 
 .emptyCard {
   display: grid;
-  min-height: 220px;
+  min-height: 180px;
   place-items: center;
   align-content: center;
-  gap: 7px;
-  color: #a8a29e;
+  gap: 6px;
+  text-align: center;
 }
 
 .emptyCard strong {
-  color: #44403c;
+  color: #292524;
   font-size: 14px;
 }
 
 .emptyCard span {
+  color: #8a8580;
   font-size: 12px;
 }
 
-/* iPad register geometry: fixed shell header, no dashboard chrome, independent checkout columns preserved. */
-@media (min-width: 780px) and (max-width: 1180px) {
-  .checkoutHost :global(.app-main) {
-    height: 100dvh !important;
-    min-height: 100dvh !important;
-    box-sizing: border-box !important;
-    padding: calc(78px + env(safe-area-inset-top)) 12px 10px !important;
-  }
-
-  .checkoutHost :global(.pos-page) {
-    height: 100% !important;
-    min-height: 0 !important;
-  }
-
-  .checkoutHost :global(.pos-workspace) {
-    height: calc(100dvh - 92px - env(safe-area-inset-top)) !important;
-    min-height: 0 !important;
-  }
-
-  .productGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .view {
-    padding-right: 14px;
-    padding-left: 14px;
-  }
-
-  .customerRow {
-    grid-template-columns: 42px minmax(180px, 1.25fr) 90px minmax(120px, 0.8fr) auto;
-  }
-
-  .customerMetric:nth-of-type(3) {
-    display: none;
-  }
-
-  .saleRow {
-    grid-template-columns: 42px minmax(190px, 1.45fr) 100px minmax(105px, 0.75fr) 55px minmax(90px, 0.6fr);
-  }
-}
-
-@media (max-width: 900px) {
+@media (min-width: 1000px) and (max-width: 1180px) {
   .header {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    padding-right: 10px;
-    padding-left: 10px;
+    grid-template-columns: 126px minmax(0, 1fr) 54px;
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
   .brand > div,
@@ -732,77 +690,138 @@
   }
 
   .accountButton {
-    min-width: 44px;
-    grid-template-columns: 34px;
-    padding: 4px;
+    grid-template-columns: 34px 14px;
+    min-width: 54px;
+    padding-right: 3px;
   }
 
+  .tabs {
+    gap: 3px;
+  }
+
+  .tabs button {
+    min-height: 46px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
+
+  .productGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customerRow {
+    grid-template-columns: 38px minmax(0, 1.35fr) minmax(92px, 0.65fr) minmax(122px, 0.75fr) auto;
+  }
+
+  .customerRow .customerMetric:nth-of-type(4),
+  .saleRow .saleMetric:nth-of-type(4) {
+    display: none;
+  }
+
+  .saleRow {
+    grid-template-columns: 38px minmax(0, 1.45fr) minmax(85px, 0.55fr) minmax(100px, 0.65fr) minmax(90px, 0.55fr);
+  }
+}
+
+@media (max-width: 999px) {
+  .header {
+    grid-template-columns: 46px minmax(0, 1fr) 46px;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .brandMark {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  .brand > div,
+  .userCopy,
   .accountButton > svg {
     display: none;
   }
 
-  .tabs {
-    overflow-x: auto;
-    justify-content: flex-start;
-    scrollbar-width: none;
+  .accountButton {
+    display: grid;
+    grid-template-columns: 34px;
+    min-width: 42px;
+    padding: 2px;
   }
 
-  .tabs::-webkit-scrollbar {
-    display: none;
+  .tabs {
+    justify-content: space-evenly;
   }
 
   .tabs button {
-    padding: 0 11px;
+    min-width: 0;
+    min-height: 46px;
+    flex: 1 1 0;
+    padding: 0 7px;
+    font-size: 11px;
   }
 
-  .toolbar {
-    grid-template-columns: 1fr;
+  .tabs button svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .view {
+    padding-right: 14px;
+    padding-left: 14px;
   }
 
   .viewHeader {
     align-items: flex-start;
     flex-direction: column;
+    gap: 12px;
   }
 
   .summaryPills {
     justify-content: flex-start;
   }
 
-  .productGrid {
+  .toolbar,
+  .toolbarActions {
     grid-template-columns: 1fr;
   }
 
-  .customerList,
-  .salesList {
-    overflow-x: auto;
+  .productGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .customerRow {
-    min-width: 820px;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+  }
+
+  .customerMetric {
+    display: none;
   }
 
   .saleRow {
-    min-width: 880px;
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+  }
+
+  .saleMetric {
+    display: none;
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 680px) {
   .tabs button span {
     display: none;
   }
 
-  .tabs button {
-    width: 44px;
-    padding: 0;
+  .productGrid {
+    grid-template-columns: 1fr;
   }
 
-  .toolbarActions {
-    grid-template-columns: 1fr auto;
+  .productCard {
+    grid-template-columns: 60px minmax(0, 1fr) auto;
   }
 
-  .view {
-    padding-top: calc(82px + env(safe-area-inset-top));
-    padding-right: 10px;
-    padding-left: 10px;
+  .productImage {
+    width: 60px;
+    height: 60px;
   }
 }
