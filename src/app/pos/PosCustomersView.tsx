@@ -4,7 +4,7 @@ import { Search, ShoppingCart, UserRound, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import styles from "./PosRegisterShell.module.css";
 
-type PosCustomer = {
+export type PosRegisterCustomer = {
   id: string;
   displayName: string;
   maskedEmail: string;
@@ -18,7 +18,7 @@ type PosCustomer = {
 };
 
 type CustomerResponse = {
-  customers?: PosCustomer[];
+  customers?: PosRegisterCustomer[];
   pagination?: { total: number };
   error?: string;
 };
@@ -33,9 +33,9 @@ function activityLabel(value: string | null, fallback: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
 
-export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosCustomer) => void }) {
+export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosRegisterCustomer) => void }) {
   const [query, setQuery] = useState("");
-  const [customers, setCustomers] = useState<PosCustomer[]>([]);
+  const [customers, setCustomers] = useState<PosRegisterCustomer[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
