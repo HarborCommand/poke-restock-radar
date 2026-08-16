@@ -7,6 +7,7 @@ import { PosRegisterShell } from "./PosRegisterShell";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
 import { PosSquarePayment } from "./PosSquarePayment";
 import { PosTaxDisplaySimplifier } from "./PosTaxDisplaySimplifier";
+import { PosVisibleViewport } from "./PosVisibleViewport";
 import styles from "./pos-admin-separation.module.css";
 import registerStyles from "./ipad-register-fix.module.css";
 import squareStyles from "./pos-square-register.module.css";
@@ -27,6 +28,7 @@ export const metadata: Metadata = {
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
     <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix}`}>
+      <PosVisibleViewport />
       <PosRegisterShell>{children}</PosRegisterShell>
       <PosCheckoutPresentation />
       <PosCartImageFix />
