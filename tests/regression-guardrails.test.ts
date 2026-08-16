@@ -143,7 +143,7 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(shell, /url\.searchParams\.has\("data"\)/);
   assert.match(shell, /new KeyboardEvent\("keydown", \{ key: "Enter"/);
   assert.match(presentation, /\.pos-add-button/);
-  assert.match(presentation, /data\.posCardTappable/);
+  assert.match(presentation, /dataset\.posCardTappable/);
   assert.match(presentation, /interactiveDescendant/);
   assert.doesNotMatch(presentation, /fetch\(|\/api\//);
   assert.match(historyRoute, /export async function GET\(\)/);
