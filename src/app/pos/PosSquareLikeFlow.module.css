@@ -241,6 +241,18 @@
   display: none !important;
 }
 
+/* Receipt delivery remains an explicit checkout choice on the payment screen. */
+:global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-receipt-email-panel) {
+  order: 3;
+  display: block !important;
+  flex: 0 0 auto !important;
+  margin-top: 12px !important;
+  border: 1px solid #e7e5e4 !important;
+  border-radius: 13px !important;
+  background: #ffffff !important;
+  padding: 14px !important;
+}
+
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-total-box) {
   order: 1;
   display: grid !important;
@@ -301,7 +313,7 @@
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-complete-button) {
-  order: 3;
+  order: 4;
   position: sticky !important;
   bottom: max(0px, env(safe-area-inset-bottom)) !important;
   z-index: 12 !important;
