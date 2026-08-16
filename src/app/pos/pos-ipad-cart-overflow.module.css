@@ -5,6 +5,8 @@
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
   padding-bottom: max(18px, env(safe-area-inset-bottom)) !important;
+  scroll-padding-top: 60px;
+  scroll-padding-bottom: max(24px, env(safe-area-inset-bottom));
 }
 
 /*
@@ -91,11 +93,55 @@
 
 /* Customer discovery can grow too; contain the result list instead of the page. */
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-customer-results) {
-  max-height: min(190px, 25dvh) !important;
+  max-height: min(170px, 22dvh) !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Keep the cart identity visible while the checkout controls beneath it scroll. */
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-header) {
+  position: sticky !important;
+  top: -16px !important;
+  z-index: 8 !important;
+  margin: -16px -16px 4px !important;
+  border-bottom: 1px solid #f0efed;
+  background: #ffffff !important;
+  padding: 16px 16px 12px !important;
+}
+
+/*
+ * On the landscape iPad register, keep New sale/search/categories anchored
+ * and scroll only the product grid. This prevents iOS elastic scrolling from
+ * dragging the checkout heading underneath the fixed navigation bar.
+ */
+@media (min-width: 1000px) and (orientation: landscape) {
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-search-panel) {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-register-sale-heading),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-scan-row),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-filter-row),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-load-more) {
+    flex: 0 0 auto !important;
+  }
+
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-result-grid) {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    align-content: start !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+  }
 }
 
 @media (min-width: 1000px) and (max-width: 1180px) and (orientation: landscape) {
