@@ -2,11 +2,6 @@
 
 import { useEffect } from "react";
 
-function cartCountFromHeading(value: string | null | undefined) {
-  const match = String(value || "").match(/Cart\s*\((\d+)\)/i);
-  return match ? Number(match[1]) : null;
-}
-
 function installSaleHeading(searchPanel: HTMLElement) {
   if (searchPanel.querySelector(".pos-register-sale-heading")) return;
   const heading = document.createElement("div");
@@ -37,8 +32,12 @@ function simplifyCartHeader(cartPanel: HTMLElement) {
     copy.prepend(eyebrow);
   }
 
-  const count = cartCountFromHeading(heading.textContent);
-  if (count !== null) heading.textContent = `${count} ${count === 1 ? "item" : "items"}`;
+  // The presentation layer rewrites the original "Cart (N)" heading. Once
+  // rewritten, parsing that same heading cannot track later cart mutations.
+  // Count the rendered cart rows instead so the label always follows the live
+  // cart without touching checkout state or sale logic.
+  const count = cartPanel.querySelectorAll(".pos-cart-lines > .pos-cart-line").length;
+  heading.textContent = `${count} ${count === 1 ? "item" : "items"}`;
 }
 
 function markProductCards(root: HTMLElement) {
