@@ -1,13 +1,22 @@
-.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel) {
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-workspace) {
+  grid-template-rows: minmax(0, 1fr) !important;
   min-height: 0 !important;
-  overflow-y: auto !important;
+  overflow: hidden !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel) {
+  align-self: stretch !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow-y: scroll !important;
   overflow-x: hidden !important;
   overscroll-behavior-y: auto !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  padding-bottom: max(34px, calc(env(safe-area-inset-bottom) + 18px)) !important;
+  padding-bottom: max(48px, calc(env(safe-area-inset-bottom) + 28px)) !important;
   scroll-padding-top: 72px;
-  scroll-padding-bottom: max(44px, calc(env(safe-area-inset-bottom) + 24px));
+  scroll-padding-bottom: max(60px, calc(env(safe-area-inset-bottom) + 36px));
 }
 
 /*
