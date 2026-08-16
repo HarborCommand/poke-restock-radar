@@ -27,7 +27,7 @@ type ProductsResponse = {
     inStoreUnits: number;
     warehouseUnits: number;
     readyToSellCount: number;
-  };
+  } | null;
   error?: string;
 };
 
