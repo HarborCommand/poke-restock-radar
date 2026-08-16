@@ -148,6 +148,8 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(presentation, /\.pos-add-button/);
   assert.match(presentation, /dataset\.posCardTappable/);
   assert.match(presentation, /interactiveDescendant/);
+  assert.match(presentation, /querySelectorAll\("\.pos-cart-lines > \.pos-cart-line"\)\.length/);
+  assert.doesNotMatch(presentation, /cartCountFromHeading/);
   assert.doesNotMatch(presentation, /fetch\(|\/api\//);
   assert.match(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)/);
   assert.match(overflowCss, /overflow-y: auto !important/);
@@ -157,6 +159,9 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(overflowCss, /> \.pos-line-total/);
   assert.match(overflowCss, /> \.icon-button\.small/);
   assert.match(overflowCss, /\.pos-customer-results/);
+  assert.match(overflowCss, /\.pos-cart-header[\s\S]*position: sticky !important/);
+  assert.match(overflowCss, /\.pos-search-panel[\s\S]*overflow: hidden !important/);
+  assert.match(overflowCss, /\.pos-result-grid[\s\S]*overflow-y: auto !important/);
   assert.match(overflowCss, /-webkit-overflow-scrolling: touch/);
   assert.match(historyRoute, /export async function GET\(\)/);
   assert.doesNotMatch(historyRoute, /export async function POST/);
