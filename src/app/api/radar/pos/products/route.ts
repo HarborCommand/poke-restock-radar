@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { privateOk } from "@/lib/http";
 import { listInventoryPhysicalLocationBalances } from "@/lib/inventory-physical-location";
-import { posUnitPrice } from "@/lib/pos";
+import { isPosSellableInventoryItem, posUnitPrice } from "@/lib/pos";
 import { hasPosRole, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { listDashboard } from "@/lib/radar-service";
 
@@ -30,6 +30,13 @@ export async function GET() {
         warehouseQuantity: 0
       };
       const price = posUnitPrice(item);
+      const posReady = isPosSellableInventoryItem({
+        quantityOwned: balance.inStoreQuantity,
+        itemStatus: item.itemStatus,
+        listingStatus: item.listingStatus,
+        publicPrice: item.publicPrice,
+        targetSellPrice: item.targetSellPrice
+      });
       return {
         id: item.id,
         title: item.publicTitle || item.itemName,
@@ -43,7 +50,7 @@ export async function GET() {
         onHandQuantity: item.quantityOwned,
         inStoreQuantity: balance.inStoreQuantity,
         warehouseQuantity: balance.warehouseQuantity,
-        posReady: price !== null && balance.inStoreQuantity > 0
+        posReady
       };
     })
     .filter((item) => item.onHandQuantity > 0)
