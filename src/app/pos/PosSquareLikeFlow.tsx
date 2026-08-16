@@ -105,9 +105,10 @@ export function PosSquareLikeFlow() {
     const root = document.querySelector<HTMLElement>('[data-pos-authenticated="true"]');
     if (!root) return;
 
-    root.dataset.posSquareFlowMode = mode;
+    const data = root.dataset;
+    data.posSquareFlowMode = mode;
     return () => {
-      if (root.dataset.posSquareFlowMode === mode) delete root.dataset.posSquareFlowMode;
+      if (data.posSquareFlowMode === mode) delete data.posSquareFlowMode;
     };
   }, [cartPanel, mode]);
 
