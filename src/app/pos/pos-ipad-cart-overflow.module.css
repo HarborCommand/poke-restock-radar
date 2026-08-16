@@ -2,49 +2,48 @@
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  overscroll-behavior-y: contain;
+  overscroll-behavior-y: auto !important;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: max(18px, env(safe-area-inset-bottom)) !important;
-  scroll-padding-top: 60px;
-  scroll-padding-bottom: max(24px, env(safe-area-inset-bottom));
+  touch-action: pan-y;
+  padding-bottom: max(34px, calc(env(safe-area-inset-bottom) + 18px)) !important;
+  scroll-padding-top: 72px;
+  scroll-padding-bottom: max(44px, calc(env(safe-area-inset-bottom) + 24px));
 }
 
 /*
- * Keep the variable-length basket independent from checkout controls.
- * This prevents large carts from pushing totals, customer lookup, payment,
- * and Complete Sale out of reach on iPad landscape.
+ * Current Sale uses ONE vertical scroll surface: the cart panel itself.
+ * Nested scrolling in the item list trapped iPad gestures and made payment
+ * controls below the customer card feel frozen. Let every sale section flow
+ * naturally so a single swipe can always reach payment and Complete Sale.
  */
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines),
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
-  flex: 0 1 clamp(170px, 36dvh, 290px) !important;
-  max-height: clamp(170px, 36dvh, 290px) !important;
+  flex: 0 0 auto !important;
   min-height: 0 !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  padding-right: 4px !important;
-  scrollbar-gutter: stable;
+  max-height: none !important;
+  overflow: visible !important;
+  padding-right: 0 !important;
 }
 
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines.is-empty) {
-  flex: 0 0 auto !important;
-  max-height: none !important;
-  overflow: visible !important;
+  min-height: 90px !important;
 }
 
 /*
  * A cart line has five direct children: image, copy/actions, quantity,
- * line total, and remove. Give every child an explicit grid position so
- * Safari never creates implicit rows that can overlap the checkout totals.
+ * line total, and remove. Every child has an explicit grid cell so Safari
+ * never creates implicit rows that can overlap another item or the totals.
  */
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line) {
   grid-template-columns: 48px minmax(0, 1fr) 108px 34px !important;
   grid-template-rows: auto auto !important;
   align-items: start !important;
   column-gap: 10px !important;
-  row-gap: 5px !important;
+  row-gap: 4px !important;
   min-height: 82px !important;
   overflow: hidden !important;
+  padding-block: 9px !important;
+  transition: min-height 120ms ease, padding 120ms ease !important;
 }
 
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .inventory-image-frame) {
@@ -84,6 +83,64 @@
   margin: 0 !important;
 }
 
+/*
+ * Adaptive density: as the basket grows, rows compact themselves before the
+ * user needs to scroll. We never shrink below comfortable iPad touch targets.
+ */
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line) {
+  min-height: 68px !important;
+  padding-block: 6px !important;
+  column-gap: 8px !important;
+  row-gap: 2px !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line .inventory-image-frame) {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line) {
+  grid-template-columns: 42px minmax(0, 1fr) 102px 32px !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line) {
+  grid-template-columns: 36px minmax(0, 1fr) 96px 30px !important;
+  min-height: 58px !important;
+  padding-block: 4px !important;
+  column-gap: 7px !important;
+  row-gap: 1px !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line .inventory-image-frame) {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line-copy > span),
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-line-price-stack) {
+  font-size: 10px !important;
+  line-height: 1.15 !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity) {
+  grid-template-columns: 28px 34px 28px !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity button),
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity input) {
+  width: 28px !important;
+  min-width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity input) {
+  width: 34px !important;
+  min-width: 34px !important;
+}
+
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-total-box),
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-customer-panel),
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-payment-panel),
@@ -91,16 +148,17 @@
   flex: 0 0 auto !important;
 }
 
-/* Customer discovery can grow too; contain the result list instead of the page. */
+/* Customer discovery may grow, but it must not consume the rest of checkout. */
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-customer-results) {
-  max-height: min(170px, 22dvh) !important;
+  max-height: min(160px, 21dvh) !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: auto !important;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
-/* Keep the cart identity visible while the checkout controls beneath it scroll. */
+/* Keep the sale identity visible while the single checkout surface scrolls. */
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-header) {
   position: sticky !important;
   top: -16px !important;
@@ -112,9 +170,9 @@
 }
 
 /*
- * On the landscape iPad register, keep New sale/search/categories anchored
- * and scroll only the product grid. This prevents iOS elastic scrolling from
- * dragging the checkout heading underneath the fixed navigation bar.
+ * On landscape iPad, keep New sale/search/categories anchored and scroll only
+ * the product grid. The right side independently scrolls through the complete
+ * sale from basket to payment.
  */
 @media (min-width: 1000px) and (orientation: landscape) {
   .cartOverflowFix :global([data-pos-authenticated="true"] .pos-search-panel) {
@@ -139,29 +197,19 @@
     overflow-x: hidden !important;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     padding-right: 4px;
     scrollbar-gutter: stable;
   }
 }
 
-@media (min-width: 1000px) and (max-width: 1180px) and (orientation: landscape) {
-  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
-    flex-basis: clamp(160px, 32dvh, 245px) !important;
-    max-height: clamp(160px, 32dvh, 245px) !important;
-  }
-}
-
-@media (max-width: 999px) {
-  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
-    flex-basis: auto !important;
-    max-height: min(360px, 48dvh) !important;
-  }
-}
-
 @media (max-width: 620px) {
-  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line) {
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line) {
     grid-template-columns: 48px minmax(0, 1fr) 34px !important;
     grid-template-rows: auto auto auto !important;
+    min-height: 0 !important;
   }
 
   .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .pos-cart-line-copy) {

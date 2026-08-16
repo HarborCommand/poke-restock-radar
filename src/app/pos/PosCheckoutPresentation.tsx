@@ -17,6 +17,12 @@ function installSaleHeading(searchPanel: HTMLElement) {
   searchPanel.prepend(heading);
 }
 
+function cartDensity(count: number) {
+  if (count >= 7) return "dense";
+  if (count >= 4) return "compact";
+  return "comfortable";
+}
+
 function simplifyCartHeader(cartPanel: HTMLElement) {
   const header = cartPanel.querySelector<HTMLElement>(".pos-cart-header");
   if (!header) return;
@@ -32,12 +38,17 @@ function simplifyCartHeader(cartPanel: HTMLElement) {
     copy.prepend(eyebrow);
   }
 
-  // The presentation layer rewrites the original "Cart (N)" heading. Once
-  // rewritten, parsing that same heading cannot track later cart mutations.
-  // Count the rendered cart rows instead so the label always follows the live
-  // cart without touching checkout state or sale logic.
+  const lines = cartPanel.querySelector<HTMLElement>(".pos-cart-lines");
   const count = cartPanel.querySelectorAll(".pos-cart-lines > .pos-cart-line").length;
+  const density = cartDensity(count);
+
   heading.textContent = `${count} ${count === 1 ? "item" : "items"}`;
+  cartPanel.dataset.posCartCount = String(count);
+  cartPanel.dataset.posCartDensity = density;
+  if (lines) {
+    lines.dataset.posCartCount = String(count);
+    lines.dataset.posCartDensity = density;
+  }
 }
 
 function markProductCards(root: HTMLElement) {
