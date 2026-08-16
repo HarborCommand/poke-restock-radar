@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -129,20 +129,30 @@ test("private admin entry keeps inventory location controls mounted for admins",
 test("POS register shell preserves checkout safeguards and keeps browse views read-only", () => {
   const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
   const layout = readFileSync(path.join(root, "src/app/pos/layout.tsx"), "utf8");
+  const presentation = readFileSync(path.join(root, "src/app/pos/PosCheckoutPresentation.tsx"), "utf8");
   const historyRoute = readFileSync(path.join(root, "src/app/api/radar/pos/history/route.ts"), "utf8");
   const productsRoute = readFileSync(path.join(root, "src/app/api/radar/pos/products/route.ts"), "utf8");
 
   assert.match(layout, /<PosRegisterShell>\{children\}<\/PosRegisterShell>/);
+  assert.match(layout, /<PosCheckoutPresentation \/>/);
+  assert.match(layout, /pos-square-register\.module\.css/);
   assert.match(shell, /"checkout".*"products".*"customers".*"sales"/s);
+  assert.match(shell, /data-pos-authenticated=\{user \? "true" : "false"\}/);
   assert.match(shell, /gamedaygrabs-pos-square-pending-v1/);
   assert.match(shell, /Finish or cancel the current Square payment before leaving Checkout/);
   assert.match(shell, /url\.searchParams\.has\("data"\)/);
+  assert.match(shell, /new KeyboardEvent\("keydown", \{ key: "Enter"/);
+  assert.match(presentation, /\.pos-add-button/);
+  assert.match(presentation, /data\.posCardTappable/);
+  assert.match(presentation, /interactiveDescendant/);
+  assert.doesNotMatch(presentation, /fetch\(|\/api\//);
   assert.match(historyRoute, /export async function GET\(\)/);
   assert.doesNotMatch(historyRoute, /export async function POST/);
   assert.match(historyRoute, /platform: "pos"/);
   assert.match(productsRoute, /listInventoryPhysicalLocationBalances/);
   assert.match(productsRoute, /inStoreQuantity/);
   assert.doesNotMatch(productsRoute, /averageCost|profitLoss|costBasis/);
+  assert.equal(existsSync(path.join(root, "src/app/pos-review/page.tsx")), false);
 });
 
 test("core safety regression suites remain part of the default test command", () => {
