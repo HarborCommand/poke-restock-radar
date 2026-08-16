@@ -1,22 +1,46 @@
+.cartOverflowFix {
+  height: var(--pos-visible-height, 100dvh) !important;
+  min-height: var(--pos-visible-height, 100dvh) !important;
+  max-height: var(--pos-visible-height, 100dvh) !important;
+  overflow: hidden !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .app-main) {
+  height: var(--pos-visible-height, 100dvh) !important;
+  min-height: 0 !important;
+  max-height: var(--pos-visible-height, 100dvh) !important;
+  overflow: hidden !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-page) {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-workspace) {
   grid-template-rows: minmax(0, 1fr) !important;
+  height: 100% !important;
   min-height: 0 !important;
+  max-height: 100% !important;
   overflow: hidden !important;
 }
 
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel) {
   align-self: stretch !important;
-  height: auto !important;
+  height: 100% !important;
   min-height: 0 !important;
   max-height: 100% !important;
-  overflow-y: scroll !important;
+  overflow-y: auto !important;
   overflow-x: hidden !important;
-  overscroll-behavior-y: auto !important;
+  overscroll-behavior-y: contain !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  padding-bottom: max(48px, calc(env(safe-area-inset-bottom) + 28px)) !important;
+  box-sizing: border-box !important;
+  padding-bottom: max(64px, calc(env(safe-area-inset-bottom) + 44px)) !important;
   scroll-padding-top: 72px;
-  scroll-padding-bottom: max(60px, calc(env(safe-area-inset-bottom) + 36px));
+  scroll-padding-bottom: max(76px, calc(env(safe-area-inset-bottom) + 52px));
 }
 
 /*
