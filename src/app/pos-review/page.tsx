@@ -2,7 +2,7 @@
 
 import { Boxes, ChevronDown, ReceiptText, Search, ShoppingCart, UserRound, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-import styles from "../pos/PosRegisterShell.module.css";
+import styles from "./pos-review.module.css";
 
 type View = "checkout" | "products" | "customers" | "sales";
 
