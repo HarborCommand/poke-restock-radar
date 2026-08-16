@@ -12,7 +12,6 @@ import styles from "./pos-admin-separation.module.css";
 import registerStyles from "./ipad-register-fix.module.css";
 import squareStyles from "./pos-square-register.module.css";
 import overflowStyles from "./pos-ipad-cart-overflow.module.css";
-import dockStyles from "./pos-checkout-dock.module.css";
 
 export const metadata: Metadata = {
   applicationName: "GameDayGrabs POS",
@@ -28,7 +27,7 @@ export const metadata: Metadata = {
 
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
-    <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix} ${dockStyles.checkoutDock}`}>
+    <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix}`}>
       <PosVisibleViewport />
       <PosRegisterShell>{children}</PosRegisterShell>
       <PosCheckoutPresentation />
