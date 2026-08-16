@@ -130,12 +130,15 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
   const layout = readFileSync(path.join(root, "src/app/pos/layout.tsx"), "utf8");
   const presentation = readFileSync(path.join(root, "src/app/pos/PosCheckoutPresentation.tsx"), "utf8");
+  const overflowCss = readFileSync(path.join(root, "src/app/pos/pos-ipad-cart-overflow.module.css"), "utf8");
   const historyRoute = readFileSync(path.join(root, "src/app/api/radar/pos/history/route.ts"), "utf8");
   const productsRoute = readFileSync(path.join(root, "src/app/api/radar/pos/products/route.ts"), "utf8");
 
   assert.match(layout, /<PosRegisterShell>\{children\}<\/PosRegisterShell>/);
   assert.match(layout, /<PosCheckoutPresentation \/>/);
   assert.match(layout, /pos-square-register\.module\.css/);
+  assert.match(layout, /pos-ipad-cart-overflow\.module\.css/);
+  assert.match(layout, /overflowStyles\.cartOverflowFix/);
   assert.match(shell, /"checkout".*"products".*"customers".*"sales"/s);
   assert.match(shell, /data-pos-authenticated=\{user \? "true" : "false"\}/);
   assert.match(shell, /gamedaygrabs-pos-square-pending-v1/);
@@ -146,6 +149,15 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(presentation, /dataset\.posCardTappable/);
   assert.match(presentation, /interactiveDescendant/);
   assert.doesNotMatch(presentation, /fetch\(|\/api\//);
+  assert.match(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)/);
+  assert.match(overflowCss, /overflow-y: auto !important/);
+  assert.match(overflowCss, /grid-template-columns: 48px minmax\(0, 1fr\) 108px 34px !important/);
+  assert.match(overflowCss, /> \.pos-cart-line-copy/);
+  assert.match(overflowCss, /> \.pos-cart-quantity/);
+  assert.match(overflowCss, /> \.pos-line-total/);
+  assert.match(overflowCss, /> \.icon-button\.small/);
+  assert.match(overflowCss, /\.pos-customer-results/);
+  assert.match(overflowCss, /-webkit-overflow-scrolling: touch/);
   assert.match(historyRoute, /export async function GET\(\)/);
   assert.doesNotMatch(historyRoute, /export async function POST/);
   assert.match(historyRoute, /platform: "pos"/);
