@@ -69,6 +69,7 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const checkoutRef = useRef<HTMLDivElement | null>(null);
 
   const isAdmin = String(user?.role || "") === "ADMIN";
   const userLabel = user?.name?.trim() || user?.email?.trim() || "Register";
@@ -78,17 +79,52 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
     if (url.searchParams.has("data")) setView("checkout");
 
     let active = true;
-    void fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" })
-      .then(async (response) => {
+    let sessionResolved = false;
+    const loadSession = async () => {
+      try {
+        const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
         const data = (await response.json()) as { user?: SessionUser | null };
-        if (active) setUser(data.user ?? null);
-      })
-      .catch(() => {
-        if (active) setUser(null);
-      });
+        if (!active) return;
+        setUser(data.user ?? null);
+        if (data.user) sessionResolved = true;
+      } catch {
+        if (active && !sessionResolved) setUser(null);
+      }
+    };
+
+    void loadSession();
+    const timer = window.setInterval(() => {
+      if (sessionResolved) {
+        window.clearInterval(timer);
+        return;
+      }
+      void loadSession();
+    }, 1200);
+
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
+  }, []);
+
+  useEffect(() => {
+    const root = checkoutRef.current;
+    if (!root) return;
+
+    const markLegacyActions = () => {
+      const controls = Array.from(root.querySelectorAll<HTMLElement>("a,button"));
+      const marker = controls.find((control) => {
+        const text = control.textContent?.trim().toLowerCase();
+        return text === "exit store mode" || text === "cashier accounts" || text === "sign out";
+      });
+      const actionRow = marker?.parentElement;
+      if (actionRow) actionRow.setAttribute("data-pos-legacy-actions", "true");
+    };
+
+    markLegacyActions();
+    const observer = new MutationObserver(markLegacyActions);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -147,62 +183,68 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
 
   return (
     <div className={styles.shell} data-pos-register-view={view}>
-      <header className={styles.header}>
-        <div className={styles.brand} aria-label="GameDayGrabs POS">
-          <span className={styles.brandMark}>G</span>
-          <div><strong>GameDayGrabs</strong><small>Point of Sale</small></div>
-        </div>
+      {user ? (
+        <header className={styles.header}>
+          <div className={styles.brand} aria-label="GameDayGrabs POS">
+            <span className={styles.brandMark}>G</span>
+            <div><strong>GameDayGrabs</strong><small>Point of Sale</small></div>
+          </div>
 
-        <nav className={styles.tabs} aria-label="Register sections">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = view === tab.id;
-            return (
-              <button
-                type="button"
-                key={tab.id}
-                className={active ? styles.activeTab : ""}
-                aria-current={active ? "page" : undefined}
-                onClick={() => selectView(tab.id)}
-              >
-                <Icon size={18} strokeWidth={2} aria-hidden="true" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+          <nav className={styles.tabs} aria-label="Register sections">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const active = view === tab.id;
+              return (
+                <button
+                  type="button"
+                  key={tab.id}
+                  className={active ? styles.activeTab : ""}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => selectView(tab.id)}
+                >
+                  <Icon size={18} strokeWidth={2} aria-hidden="true" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
 
-        <div className={styles.account} ref={menuRef}>
-          <button type="button" className={styles.accountButton} onClick={() => setMenuOpen((current) => !current)} aria-expanded={menuOpen}>
-            <span className={styles.userAvatar}>{userLabel.slice(0, 1).toUpperCase()}</span>
-            <span className={styles.userCopy}><strong>{userLabel}</strong><small>{isAdmin ? "Admin" : "Cashier"}</small></span>
-            <ChevronDown size={15} aria-hidden="true" />
-          </button>
-          {menuOpen ? (
-            <div className={styles.accountMenu} role="menu">
-              {isAdmin ? (
-                <>
-                  <Link role="menuitem" href="/admin/inventory-locations"><Store size={16} />Inventory Locations</Link>
-                  <Link role="menuitem" href="/admin/cashiers"><Users size={16} />Cashier Accounts</Link>
-                  <Link role="menuitem" href="/admin?tab=pos"><MoreHorizontal size={16} />Admin Dashboard</Link>
-                  <div className={styles.menuDivider} />
-                </>
-              ) : null}
-              <button type="button" role="menuitem" onClick={() => void signOut()}><LogOut size={16} />Sign Out</button>
-            </div>
-          ) : null}
-        </div>
-      </header>
+          <div className={styles.account} ref={menuRef}>
+            <button type="button" className={styles.accountButton} onClick={() => setMenuOpen((current) => !current)} aria-expanded={menuOpen}>
+              <span className={styles.userAvatar}>{userLabel.slice(0, 1).toUpperCase()}</span>
+              <span className={styles.userCopy}><strong>{userLabel}</strong><small>{isAdmin ? "Admin" : "Cashier"}</small></span>
+              <ChevronDown size={15} aria-hidden="true" />
+            </button>
+            {menuOpen ? (
+              <div className={styles.accountMenu} role="menu">
+                {isAdmin ? (
+                  <>
+                    <Link role="menuitem" href="/admin/inventory-locations"><Store size={16} />Inventory Locations</Link>
+                    <Link role="menuitem" href="/admin/cashiers"><Users size={16} />Cashier Accounts</Link>
+                    <Link role="menuitem" href="/admin?tab=pos"><MoreHorizontal size={16} />Admin Dashboard</Link>
+                    <div className={styles.menuDivider} />
+                  </>
+                ) : null}
+                <button type="button" role="menuitem" onClick={() => void signOut()}><LogOut size={16} />Sign Out</button>
+              </div>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
 
-      {notice ? <div className={styles.notice} role="status">{notice}<button type="button" onClick={() => setNotice(null)}>Dismiss</button></div> : null}
+      {notice && user ? <div className={styles.notice} role="status">{notice}<button type="button" onClick={() => setNotice(null)}>Dismiss</button></div> : null}
 
-      <div className={view === "checkout" ? styles.checkoutHost : `${styles.checkoutHost} ${styles.checkoutHidden}`} aria-hidden={view !== "checkout"}>
+      <div
+        ref={checkoutRef}
+        className={user && view !== "checkout" ? `${styles.checkoutHost} ${styles.checkoutHidden}` : user ? styles.checkoutHost : styles.unauthenticatedHost}
+        aria-hidden={Boolean(user && view !== "checkout")}
+      >
         {children}
       </div>
 
-      {view === "products" ? <PosProductsView onCheckout={openProductAtCheckout} /> : null}
-      {view === "customers" ? <PosCustomersView onCheckout={openCustomerAtCheckout} /> : null}
-      {view === "sales" ? <PosSalesView /> : null}
+      {user && view === "products" ? <PosProductsView onCheckout={openProductAtCheckout} /> : null}
+      {user && view === "customers" ? <PosCustomersView onCheckout={openCustomerAtCheckout} /> : null}
+      {user && view === "sales" ? <PosSalesView /> : null}
     </div>
   );
 }
