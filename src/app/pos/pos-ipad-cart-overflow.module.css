@@ -1,0 +1,142 @@
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel) {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: max(18px, env(safe-area-inset-bottom)) !important;
+}
+
+/*
+ * Keep the variable-length basket independent from checkout controls.
+ * This prevents large carts from pushing totals, customer lookup, payment,
+ * and Complete Sale out of reach on iPad landscape.
+ */
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
+  flex: 0 1 clamp(170px, 36dvh, 290px) !important;
+  max-height: clamp(170px, 36dvh, 290px) !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 4px !important;
+  scrollbar-gutter: stable;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines.is-empty) {
+  flex: 0 0 auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+/*
+ * A cart line has five direct children: image, copy/actions, quantity,
+ * line total, and remove. Give every child an explicit grid position so
+ * Safari never creates implicit rows that can overlap the checkout totals.
+ */
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line) {
+  grid-template-columns: 48px minmax(0, 1fr) 108px 34px !important;
+  grid-template-rows: auto auto !important;
+  align-items: start !important;
+  column-gap: 10px !important;
+  row-gap: 5px !important;
+  min-height: 82px !important;
+  overflow: hidden !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .inventory-image-frame) {
+  grid-column: 1 !important;
+  grid-row: 1 / span 2 !important;
+  align-self: start !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .pos-cart-line-copy) {
+  grid-column: 2 !important;
+  grid-row: 1 / span 2 !important;
+  align-self: start !important;
+  min-width: 0 !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .pos-cart-quantity) {
+  grid-column: 3 !important;
+  grid-row: 1 !important;
+  justify-self: end !important;
+  align-self: start !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .pos-line-total) {
+  grid-column: 3 !important;
+  grid-row: 2 !important;
+  justify-self: end !important;
+  align-self: end !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .icon-button.small) {
+  grid-column: 4 !important;
+  grid-row: 1 / span 2 !important;
+  justify-self: end !important;
+  align-self: center !important;
+  margin: 0 !important;
+}
+
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-total-box),
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-customer-panel),
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-payment-panel),
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-complete-button) {
+  flex: 0 0 auto !important;
+}
+
+/* Customer discovery can grow too; contain the result list instead of the page. */
+.cartOverflowFix :global([data-pos-authenticated="true"] .pos-customer-results) {
+  max-height: min(190px, 25dvh) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 1000px) and (max-width: 1180px) and (orientation: landscape) {
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
+    flex-basis: clamp(160px, 32dvh, 245px) !important;
+    max-height: clamp(160px, 32dvh, 245px) !important;
+  }
+}
+
+@media (max-width: 999px) {
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
+    flex-basis: auto !important;
+    max-height: min(360px, 48dvh) !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line) {
+    grid-template-columns: 48px minmax(0, 1fr) 34px !important;
+    grid-template-rows: auto auto auto !important;
+  }
+
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .pos-cart-line-copy) {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .pos-cart-quantity) {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    justify-self: start !important;
+  }
+
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .pos-line-total) {
+    grid-column: 2 !important;
+    grid-row: 3 !important;
+    justify-self: start !important;
+  }
+
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-line > .icon-button.small) {
+    grid-column: 3 !important;
+    grid-row: 1 / span 3 !important;
+  }
+}
