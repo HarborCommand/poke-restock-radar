@@ -152,8 +152,14 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
     window.setTimeout(() => {
       const input = document.querySelector<HTMLInputElement>(".pos-search-input input");
       if (!input) return;
-      setControlledInputValue(input, product.upc || product.sku || product.title);
+      const exactCode = product.upc || product.sku;
+      setControlledInputValue(input, exactCode || product.title);
       input.focus();
+      if (exactCode) {
+        window.setTimeout(() => {
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+        }, 40);
+      }
     }, 80);
   }
 
