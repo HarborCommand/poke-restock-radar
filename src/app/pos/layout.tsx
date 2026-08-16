@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { PrivateSignOutButton } from "@/components/PrivateSignOutButton";
 import { PosCartImageFix } from "./PosCartImageFix";
 import { PosCashTender } from "./PosCashTender";
+import { PosRegisterShell } from "./PosRegisterShell";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
 import { PosSquarePayment } from "./PosSquarePayment";
 import { PosTaxDisplaySimplifier } from "./PosTaxDisplaySimplifier";
@@ -24,13 +24,12 @@ export const metadata: Metadata = {
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
     <div className={`${styles.posShell} ${registerStyles.registerShell}`}>
-      {children}
+      <PosRegisterShell>{children}</PosRegisterShell>
       <PosCartImageFix />
       <PosScannerFocusButton />
       <PosCashTender />
       <PosSquarePayment />
       <PosTaxDisplaySimplifier />
-      <PrivateSignOutButton adminOnly redirectTo="/pos" />
     </div>
   );
 }
