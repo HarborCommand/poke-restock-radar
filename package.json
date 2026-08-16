@@ -63,7 +63,7 @@
     "@types/nodemailer": "^6.4.19",
     "@types/pdfkit": "^0.17.6",
     "@types/react": "19.2.14",
-    "@types/react-dom": "^19.2.3",
+    "@types/react-dom": "19.2.3",
     "@types/web-push": "^3.6.4",
     "dotenv": "17.4.2",
     "eslint": "9.39.1",
