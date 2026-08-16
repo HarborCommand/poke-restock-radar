@@ -120,6 +120,12 @@ test("POS Square card flow requires a verified completed Square payment", () => 
   assert.match(squareService, /payment\.location_id !== config\.locationId/);
 });
 
+test("private admin entry keeps inventory location controls mounted for admins", () => {
+  const entry = readFileSync(path.join(root, "src/components/PrivateRadarAppEntry.tsx"), "utf8");
+  assert.match(entry, /AdminInventoryLocationTools/);
+  assert.match(entry, /String\(user\.role\) === "ADMIN" \? <AdminInventoryLocationTools \/>/);
+});
+
 test("core safety regression suites remain part of the default test command", () => {
   const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
   assert.match(packageJson.scripts.test ?? "", /tests\/\*\.test/);
