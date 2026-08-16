@@ -70,8 +70,10 @@ function applyPresentation(root: HTMLElement) {
   markProductCards(root);
 }
 
-function interactiveTarget(target: EventTarget | null) {
-  return target instanceof Element && Boolean(target.closest("button,input,a,select,textarea,label,[role='button']"));
+function interactiveDescendant(target: EventTarget | null, card: HTMLElement) {
+  if (!(target instanceof Element)) return false;
+  const interactive = target.closest<HTMLElement>("button,input,a,select,textarea,label,[role='button']");
+  return Boolean(interactive && interactive !== card);
 }
 
 export function PosCheckoutPresentation() {
@@ -92,10 +94,9 @@ export function PosCheckoutPresentation() {
 
     const onClick = (event: MouseEvent) => {
       const current = root();
-      if (!current || interactiveTarget(event.target)) return;
-      if (!(event.target instanceof Element)) return;
+      if (!current || !(event.target instanceof Element)) return;
       const card = event.target.closest<HTMLElement>(".pos-product-card[data-pos-card-tappable='true']");
-      if (!card || !current.contains(card)) return;
+      if (!card || !current.contains(card) || interactiveDescendant(event.target, card)) return;
       const addButton = card.querySelector<HTMLButtonElement>(".pos-add-button");
       if (addButton && !addButton.disabled) addButton.click();
     };
