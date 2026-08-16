@@ -151,6 +151,8 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(historyRoute, /platform: "pos"/);
   assert.match(productsRoute, /listInventoryPhysicalLocationBalances/);
   assert.match(productsRoute, /inStoreQuantity/);
+  assert.match(productsRoute, /isPosSellableInventoryItem/);
+  assert.match(productsRoute, /quantityOwned: balance\.inStoreQuantity/);
   assert.doesNotMatch(productsRoute, /averageCost|profitLoss|costBasis/);
   assert.equal(existsSync(path.join(root, "src/app/pos-review/page.tsx")), false);
 });
