@@ -126,6 +126,25 @@ test("private admin entry keeps inventory location controls mounted for admins",
   assert.match(entry, /String\(user\.role\) === "ADMIN" \? <AdminInventoryLocationTools \/>/);
 });
 
+test("POS register shell preserves checkout safeguards and keeps browse views read-only", () => {
+  const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
+  const layout = readFileSync(path.join(root, "src/app/pos/layout.tsx"), "utf8");
+  const historyRoute = readFileSync(path.join(root, "src/app/api/radar/pos/history/route.ts"), "utf8");
+  const productsRoute = readFileSync(path.join(root, "src/app/api/radar/pos/products/route.ts"), "utf8");
+
+  assert.match(layout, /<PosRegisterShell>\{children\}<\/PosRegisterShell>/);
+  assert.match(shell, /"checkout".*"products".*"customers".*"sales"/s);
+  assert.match(shell, /gamedaygrabs-pos-square-pending-v1/);
+  assert.match(shell, /Finish or cancel the current Square payment before leaving Checkout/);
+  assert.match(shell, /url\.searchParams\.has\("data"\)/);
+  assert.match(historyRoute, /export async function GET\(\)/);
+  assert.doesNotMatch(historyRoute, /export async function POST/);
+  assert.match(historyRoute, /platform: "pos"/);
+  assert.match(productsRoute, /listInventoryPhysicalLocationBalances/);
+  assert.match(productsRoute, /inStoreQuantity/);
+  assert.doesNotMatch(productsRoute, /averageCost|profitLoss|costBasis/);
+});
+
 test("core safety regression suites remain part of the default test command", () => {
   const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
   assert.match(packageJson.scripts.test ?? "", /tests\/\*\.test/);
