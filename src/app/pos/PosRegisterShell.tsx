@@ -182,7 +182,7 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={styles.shell} data-pos-register-view={view}>
+    <div className={styles.shell} data-pos-register-view={view} data-pos-authenticated={user ? "true" : "false"}>
       {user ? (
         <header className={styles.header}>
           <div className={styles.brand} aria-label="GameDayGrabs POS">
