@@ -1,0 +1,134 @@
+.checkoutDock :global([data-pos-authenticated="true"] .pos-cart-panel) {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+}
+
+/* Current Sale identity never consumes scroll space. */
+.checkoutDock :global([data-pos-authenticated="true"] .pos-cart-header) {
+  position: relative !important;
+  top: auto !important;
+  z-index: 2 !important;
+  flex: 0 0 auto !important;
+  margin: 0 0 4px !important;
+  border-bottom: 1px solid #f0efed !important;
+  background: #fff !important;
+  padding: 0 0 12px !important;
+}
+
+/*
+ * The basket is the only large scroll surface in Current Sale. It flexes to
+ * whatever space remains after totals, customer, payment and Complete Sale.
+ */
+.checkoutDock :global([data-pos-authenticated="true"] .pos-cart-lines),
+.checkoutDock :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
+  flex: 1 1 0 !important;
+  min-height: 92px !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding-right: 4px !important;
+  padding-bottom: 8px !important;
+  margin-bottom: 8px !important;
+  scrollbar-gutter: stable;
+}
+
+.checkoutDock :global([data-pos-authenticated="true"] .pos-cart-lines.is-empty) {
+  flex: 1 1 92px !important;
+}
+
+/* Checkout summary and tender controls own reserved space below the basket. */
+.checkoutDock :global([data-pos-authenticated="true"] .pos-total-box) {
+  flex: 0 0 auto !important;
+  margin-top: 0 !important;
+}
+
+.checkoutDock :global([data-pos-authenticated="true"] .pos-customer-panel) {
+  flex: 0 1 168px !important;
+  min-height: 0 !important;
+  max-height: 168px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.checkoutDock :global([data-pos-authenticated="true"] .pos-customer-results) {
+  max-height: 112px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.checkoutDock :global([data-pos-authenticated="true"] .pos-payment-panel) {
+  flex: 0 1 220px !important;
+  min-height: 0 !important;
+  max-height: 220px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.checkoutDock :global([data-pos-authenticated="true"] .pos-complete-button) {
+  flex: 0 0 auto !important;
+  min-height: 52px !important;
+  margin-top: 8px !important;
+}
+
+/*
+ * Landscape iPad is the store register target. Keep the tender dock compact
+ * enough that payment is always reachable while preserving 44px touch targets.
+ */
+@media (min-width: 1000px) and (orientation: landscape) {
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-cart-lines),
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
+    min-height: 118px !important;
+  }
+
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-customer-panel) {
+    flex-basis: 148px !important;
+    max-height: 148px !important;
+  }
+
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-customer-results) {
+    max-height: 88px !important;
+  }
+
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-payment-panel) {
+    flex-basis: 190px !important;
+    max-height: 190px !important;
+  }
+}
+
+/* Short landscape screens get an even tighter dock rather than clipping it. */
+@media (min-width: 780px) and (max-height: 760px) {
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-cart-lines),
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
+    min-height: 72px !important;
+  }
+
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-customer-panel) {
+    flex-basis: 124px !important;
+    max-height: 124px !important;
+  }
+
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-customer-results) {
+    max-height: 68px !important;
+  }
+
+  .checkoutDock :global([data-pos-authenticated="true"] .pos-payment-panel) {
+    flex-basis: 164px !important;
+    max-height: 164px !important;
+  }
+}
