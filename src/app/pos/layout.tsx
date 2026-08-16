@@ -5,6 +5,7 @@ import { PosCashTender } from "./PosCashTender";
 import { PosCheckoutPresentation } from "./PosCheckoutPresentation";
 import { PosRegisterShell } from "./PosRegisterShell";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
+import { PosSquareLikeFlow } from "./PosSquareLikeFlow";
 import { PosSquarePayment } from "./PosSquarePayment";
 import { PosTaxDisplaySimplifier } from "./PosTaxDisplaySimplifier";
 import { PosVisibleViewport } from "./PosVisibleViewport";
@@ -31,6 +32,7 @@ export default function PosLayout({ children }: { children: ReactNode }) {
       <PosVisibleViewport />
       <PosRegisterShell>{children}</PosRegisterShell>
       <PosCheckoutPresentation />
+      <PosSquareLikeFlow />
       <PosCartImageFix />
       <PosScannerFocusButton />
       <PosCashTender />
