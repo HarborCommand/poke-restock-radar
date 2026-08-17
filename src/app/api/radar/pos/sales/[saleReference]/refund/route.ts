@@ -106,8 +106,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
               status: providerRefund.status
             }
           });
-          throw new Error(
-            `Square accepted the ${`$${(requestedRefundCents / 100).toFixed(2)}`} refund, but it is still pending. No GameDayGrabs refund or inventory change was recorded yet. Tap Refund sale again later to check the same Square refund.`
+          const amountLabel = `$${(requestedRefundCents / 100).toFixed(2)}`;
+          return withRequestId(
+            privateOk(
+              {
+                error: `Square accepted the ${amountLabel} refund, but it is still pending. No GameDayGrabs refund or inventory change was recorded yet. Tap Refund sale again later to check the same Square refund.`,
+                code: "SQUARE_REFUND_PENDING",
+                retryable: true,
+                providerRefund
+              },
+              409
+            ),
+            requestId
           );
         }
 
