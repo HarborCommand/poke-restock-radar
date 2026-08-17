@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PosCartImageFix } from "./PosCartImageFix";
 import { PosCashTender } from "./PosCashTender";
 import { PosCheckoutPresentation } from "./PosCheckoutPresentation";
+import { PosLoadingBrand } from "./PosLoadingBrand";
 import { PosRegisterShell } from "./PosRegisterShell";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
 import { PosSquareLikeFlow } from "./PosSquareLikeFlow";
@@ -32,6 +33,7 @@ export const metadata: Metadata = {
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
     <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix} ${saleContainmentStyles.saleContainmentFix} ${saleRowDensityStyles.saleRowDensity} ${finalFixStyles.finalFix}`}>
+      <PosLoadingBrand />
       <PosVisibleViewport />
       <PosRegisterShell>{children}</PosRegisterShell>
       <PosCheckoutPresentation />
