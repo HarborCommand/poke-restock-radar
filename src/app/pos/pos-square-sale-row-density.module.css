@@ -3,35 +3,99 @@
 }
 
 /*
- * Square-style basket rows keep a stable readable height. Once the visible
- * basket is full, additional products stay in the same scrollable item list
- * instead of compressing the rows smaller and smaller.
+ * Current Sale is a vertical stack of self-contained rows. The earlier density
+ * fix stopped rows from shrinking, but each line still used a two-row grid;
+ * long product metadata plus Adjust price could spill into the next item on
+ * iPad. Give every product its own layout boundary before the next row starts.
  */
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+}
+
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line),
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line),
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line) {
+  display: grid !important;
   grid-template-columns: 48px minmax(0, 1fr) 108px 34px !important;
-  grid-template-rows: auto auto !important;
-  min-height: 126px !important;
+  grid-template-rows: auto minmax(16px, 1fr) auto !important;
+  align-items: start !important;
+  min-height: 154px !important;
   height: auto !important;
-  padding-block: 10px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  isolation: isolate;
+  padding-block: 12px !important;
   column-gap: 10px !important;
-  row-gap: 4px !important;
+  row-gap: 6px !important;
   flex: 0 0 auto !important;
 }
 
-.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line .inventory-image-frame),
-.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line .inventory-image-frame),
-.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line .inventory-image-frame) {
+/* Explicit three-row placement keeps product copy, controls, and totals apart. */
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .inventory-image-frame),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line > .inventory-image-frame),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line > .inventory-image-frame) {
+  grid-column: 1 !important;
+  grid-row: 1 / span 3 !important;
+  align-self: start !important;
   width: 48px !important;
   height: 48px !important;
   min-width: 48px !important;
 }
 
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line > .pos-cart-line-copy),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line > .pos-cart-line-copy) {
+  grid-column: 2 !important;
+  grid-row: 1 / span 3 !important;
+  align-self: start !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-quantity),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line > .pos-cart-quantity),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line > .pos-cart-quantity) {
+  grid-column: 3 !important;
+  grid-row: 1 !important;
+  justify-self: end !important;
+  align-self: start !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-line-total),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line > .pos-line-total),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line > .pos-line-total) {
+  grid-column: 3 !important;
+  grid-row: 3 !important;
+  justify-self: end !important;
+  align-self: end !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .icon-button.small),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line > .icon-button.small),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line > .icon-button.small) {
+  grid-column: 4 !important;
+  grid-row: 1 / span 3 !important;
+  justify-self: end !important;
+  align-self: center !important;
+  margin: 0 !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line-copy > span),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-line-price-stack),
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line-copy > span),
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-line-price-stack) {
   font-size: inherit !important;
   line-height: inherit !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-line-price-stack) {
+  margin-top: 6px !important;
 }
 
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity) {
