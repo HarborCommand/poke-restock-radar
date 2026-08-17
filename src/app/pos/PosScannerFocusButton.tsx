@@ -3,6 +3,7 @@
 import { ScanBarcode } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useState } from "react";
+import { canonicalProductUPC } from "@/lib/upc";
 import { PosCameraScanner } from "./PosCameraScanner";
 import { PosCustomerInviteButton } from "./PosCustomerInviteButton";
 
@@ -26,6 +27,11 @@ function dispatchEnterWithoutSearchFocus(input: HTMLInputElement) {
 
 function checkoutSearchInput() {
   return document.querySelector<HTMLInputElement>(".pos-search-input input");
+}
+
+function normalizeCameraCode(rawCode: string) {
+  const trimmed = rawCode.trim();
+  return /^\d[\d\s.-]*$/.test(trimmed) ? canonicalProductUPC(trimmed) : trimmed;
 }
 
 export function PosScannerFocusButton() {
@@ -73,7 +79,7 @@ export function PosScannerFocusButton() {
   }, []);
 
   const handleDetected = useCallback((rawCode: string) => {
-    const code = rawCode.trim();
+    const code = normalizeCameraCode(rawCode);
     if (!code) return;
     const input = checkoutSearchInput();
     if (!input) return;
