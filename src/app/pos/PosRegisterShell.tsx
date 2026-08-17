@@ -262,7 +262,7 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
 
       {user && view === "products" ? <PosProductsView onCheckout={openProductAtCheckout} /> : null}
       {user && view === "customers" ? <PosCustomersView onCheckout={openCustomerAtCheckout} /> : null}
-      {user && view === "sales" ? <PosSalesView /> : null}
+      {user && view === "sales" ? <PosSalesView isAdmin={isAdmin} /> : null}
     </div>
   );
 }
