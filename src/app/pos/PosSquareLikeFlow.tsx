@@ -3,6 +3,7 @@
 import { Check, ChevronLeft, CreditCard, UserRound } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
+import feedbackStyles from "./PosCustomerAttachFeedback.module.css";
 import styles from "./PosSquareLikeFlow.module.css";
 
 type FlowMode = "sale" | "customer" | "payment";
@@ -234,8 +235,8 @@ export function PosSquareLikeFlow() {
 
       {customerToast
         ? createPortal(
-            <div className={styles.customerToast} role="status" aria-live="polite">
-              <span className={styles.customerToastIcon} aria-hidden="true">
+            <div className={feedbackStyles.customerToast} role="status" aria-live="polite">
+              <span className={feedbackStyles.customerToastIcon} aria-hidden="true">
                 <Check size={18} />
               </span>
               <div>
@@ -250,7 +251,7 @@ export function PosSquareLikeFlow() {
       {cartHeader && mode === "sale"
         ? createPortal(
             <button
-              className={`${styles.customerButton}${customerAttached ? ` ${styles.customerButtonAttached}` : ""}`}
+              className={`${styles.customerButton}${customerAttached ? ` ${feedbackStyles.customerButtonAttached}` : ""}`}
               type="button"
               aria-label={
                 customerAttached
