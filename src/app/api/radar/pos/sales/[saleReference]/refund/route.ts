@@ -1,9 +1,9 @@
 import { requireUser } from "@/lib/auth";
-import { authorizeAdminMutation } from "@/lib/admin-authorization";
 import { logAudit } from "@/lib/audit";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import { logServerEvent, requestCorrelationId, runWithRequestContext, safeEntityRef } from "@/lib/observability";
 import { POS_REFUND_REASON_LABELS } from "@/lib/pos";
+import { authorizePosMutation, resolvePosStoreUser } from "@/lib/pos-authorization";
 import { refundPosSale } from "@/lib/radar-service";
 import { posSaleRefundSchema } from "@/lib/validation";
 
@@ -15,15 +15,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ sal
   const startedAt = Date.now();
   const { user, response } = await requireUser();
   if (response) return withPrivateNoStore(withRequestId(response, requestId));
-  const adminResponse = authorizeAdminMutation(request, user);
-  if (adminResponse) return withPrivateNoStore(withRequestId(adminResponse, requestId));
+  const posResponse = authorizePosMutation(request, user);
+  if (posResponse) return withPrivateNoStore(withRequestId(posResponse, requestId));
 
   return runWithRequestContext(requestId, async () => {
     let saleReference: string | null = null;
     try {
       ({ saleReference } = await params);
       const input = posSaleRefundSchema.parse(await readJson(request));
-      const sale = await refundPosSale(user, decodeURIComponent(saleReference), input);
+      const storeUser = await resolvePosStoreUser(user);
+      const sale = await refundPosSale(storeUser, decodeURIComponent(saleReference), input);
       await logAudit({
         user,
         requestId,
