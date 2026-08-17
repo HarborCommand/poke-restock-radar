@@ -37,7 +37,11 @@ export async function GET() {
     select: {
       saleReference: true,
       quantitySold: true,
+      soldPricePerItem: true,
       grossSale: true,
+      originalUnitPrice: true,
+      adjustedUnitPrice: true,
+      discountAmount: true,
       subtotalCents: true,
       taxCents: true,
       totalCents: true,
@@ -53,6 +57,18 @@ export async function GET() {
     orderBy: [{ soldAt: "desc" }, { createdAt: "desc" }],
     take: 600
   });
+
+  type SaleLine = {
+    title: string;
+    quantity: number;
+    unitPrice: number;
+    originalUnitPrice: number | null;
+    discountAmount: number;
+    subtotal: number;
+    tax: number;
+    total: number;
+    refundedAmount: number;
+  };
 
   type SaleSummary = {
     saleReference: string;
@@ -70,6 +86,7 @@ export async function GET() {
     refundedAmount: number;
     refundStatus: string | null;
     items: string[];
+    lines: SaleLine[];
   };
 
   const grouped = new Map<string, SaleSummary>();
@@ -92,18 +109,35 @@ export async function GET() {
       customerPhone: maskPhone(row.customerPhone),
       refundedAmount: 0,
       refundStatus: null,
-      items: []
+      items: [],
+      lines: []
     };
+
+    const lineSubtotalCents = row.subtotalCents ?? Math.round(row.grossSale * 100);
+    const lineTaxCents = row.taxCents ?? 0;
+    const lineTotalCents = row.totalCents ?? Math.round(row.grossSale * 100);
+    const itemTitle = row.inventoryItem.publicTitle || row.inventoryItem.itemName;
+    const unitPrice = row.adjustedUnitPrice ?? row.soldPricePerItem;
 
     current.itemCount += row.quantitySold;
     current.lineCount += 1;
-    current.subtotalCents += row.subtotalCents ?? Math.round(row.grossSale * 100);
-    current.taxCents += row.taxCents ?? 0;
-    current.totalCents += row.totalCents ?? Math.round(row.grossSale * 100);
+    current.subtotalCents += lineSubtotalCents;
+    current.taxCents += lineTaxCents;
+    current.totalCents += lineTotalCents;
     current.refundedAmount += row.refundedAmount ?? 0;
     current.refundStatus = row.refundStatus || current.refundStatus;
-    const itemTitle = row.inventoryItem.publicTitle || row.inventoryItem.itemName;
     if (!current.items.includes(itemTitle)) current.items.push(itemTitle);
+    current.lines.push({
+      title: itemTitle,
+      quantity: row.quantitySold,
+      unitPrice: Number(unitPrice.toFixed(2)),
+      originalUnitPrice: row.originalUnitPrice === null ? null : Number(row.originalUnitPrice.toFixed(2)),
+      discountAmount: Number((row.discountAmount ?? 0).toFixed(2)),
+      subtotal: Number((lineSubtotalCents / 100).toFixed(2)),
+      tax: Number((lineTaxCents / 100).toFixed(2)),
+      total: Number((lineTotalCents / 100).toFixed(2)),
+      refundedAmount: Number((row.refundedAmount ?? 0).toFixed(2))
+    });
     if (row.soldAt.toISOString() > current.completedAt) current.completedAt = row.soldAt.toISOString();
     grouped.set(saleReference, current);
   }
