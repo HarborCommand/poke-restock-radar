@@ -1,0 +1,99 @@
+.finalFix {
+  min-width: 0;
+}
+
+/*
+ * Reserve the real width of the quantity stepper. The previous 108px grid
+ * track was narrower than the rendered control on iPad, so the stepper could
+ * paint over the UPC/product metadata column.
+ */
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line),
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line),
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line) {
+  grid-template-columns: 48px minmax(0, 1fr) 132px 34px !important;
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy) {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  padding-right: 2px !important;
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy > strong),
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy > span) {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-quantity) {
+  width: 132px !important;
+  max-width: 132px !important;
+  justify-self: end !important;
+  box-sizing: border-box !important;
+}
+
+/*
+ * Payment should behave like a register payment card, not a second workspace
+ * below the catalog. Keep the sale screen in place, dim it, and place the
+ * existing payment controls in a centered, viewport-safe modal card.
+ */
+.finalFix :global(.pos-payment-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 4900;
+  background: rgba(24, 24, 27, 0.38);
+  -webkit-backdrop-filter: blur(7px) saturate(0.9);
+  backdrop-filter: blur(7px) saturate(0.9);
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-search-panel) {
+  display: block !important;
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-cart-panel) {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 5000 !important;
+  width: min(620px, calc(100vw - 48px)) !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: calc(100dvh - 112px) !important;
+  transform: translate(-50%, -50%) !important;
+  align-self: auto !important;
+  margin: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  border: 1px solid rgba(60, 60, 67, 0.16) !important;
+  border-radius: 22px !important;
+  background: #ffffff !important;
+  padding: 18px 18px max(18px, env(safe-area-inset-bottom)) !important;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28) !important;
+  box-sizing: border-box !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-cart-panel > [class*="screenHeader"]) {
+  top: -18px !important;
+}
+
+@media (min-width: 780px) and (max-width: 1180px) {
+  .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-workspace) {
+    grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.88fr) !important;
+  }
+}
+
+@media (max-width: 779px) {
+  .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-cart-panel) {
+    width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 36px) !important;
+    border-radius: 18px !important;
+    padding: 14px 14px max(14px, env(safe-area-inset-bottom)) !important;
+  }
+}
