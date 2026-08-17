@@ -8,6 +8,7 @@ import { PosRegisterShell } from "./PosRegisterShell";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
 import { PosSquareLikeFlow } from "./PosSquareLikeFlow";
 import { PosSquarePayment } from "./PosSquarePayment";
+import { PosSquareRefundPresentation } from "./PosSquareRefundPresentation";
 import { PosTaxDisplaySimplifier } from "./PosTaxDisplaySimplifier";
 import { PosVisibleViewport } from "./PosVisibleViewport";
 import styles from "./pos-admin-separation.module.css";
@@ -43,6 +44,7 @@ export default function PosLayout({ children }: { children: ReactNode }) {
       <PosScannerFocusButton />
       <PosCashTender />
       <PosSquarePayment />
+      <PosSquareRefundPresentation />
       <PosTaxDisplaySimplifier />
     </div>
   );
