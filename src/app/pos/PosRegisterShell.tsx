@@ -44,6 +44,17 @@ function setControlledInputValue(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function dispatchEnterWithoutSearchFocus(input: HTMLInputElement) {
+  const originalFocus = input.focus;
+  const blockedFocus: typeof input.focus = () => undefined;
+  input.focus = blockedFocus;
+  try {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+  } finally {
+    input.focus = originalFocus;
+  }
+}
+
 function activeSquarePending() {
   try {
     const raw = window.localStorage.getItem(SQUARE_PENDING_STORAGE_KEY) || window.sessionStorage.getItem(SQUARE_PENDING_STORAGE_KEY);
@@ -154,10 +165,11 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
       if (!input) return;
       const exactCode = product.upc || product.sku;
       setControlledInputValue(input, exactCode || product.title);
-      input.focus();
       if (exactCode) {
         window.setTimeout(() => {
-          input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true }));
+          // Dispatch the existing Enter-to-add path without allowing RadarApp's
+          // legacy post-add refocus to summon the iPad software keyboard.
+          dispatchEnterWithoutSearchFocus(input);
         }, 40);
       }
     }, 80);

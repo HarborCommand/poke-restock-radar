@@ -86,6 +86,26 @@ function interactiveDescendant(target: EventTarget | null, card: HTMLElement) {
   return Boolean(interactive && interactive !== card);
 }
 
+function suppressSearchFocusForProductAdd(root: HTMLElement, target: EventTarget | null) {
+  if (!(target instanceof Element)) return;
+  const addButton = target.closest<HTMLButtonElement>(".pos-add-button");
+  if (!addButton || addButton.disabled || !root.contains(addButton)) return;
+
+  const input = root.querySelector<HTMLInputElement>(".pos-search-input input");
+  if (!input) return;
+
+  // RadarApp historically refocuses the search field after every add. On iPad,
+  // that programmatic focus summons the software keyboard even when the cashier
+  // tapped a product tile. Block only that synchronous add-time focus. Manual
+  // taps in Search and the explicit Scan control keep their normal focus behavior.
+  const originalFocus = input.focus;
+  const blockedFocus: typeof input.focus = () => undefined;
+  input.focus = blockedFocus;
+  queueMicrotask(() => {
+    if (input.focus === blockedFocus) input.focus = originalFocus;
+  });
+}
+
 export function PosCheckoutPresentation() {
   useEffect(() => {
     let scheduled = false;
@@ -100,6 +120,11 @@ export function PosCheckoutPresentation() {
       if (scheduled) return;
       scheduled = true;
       window.requestAnimationFrame(run);
+    };
+
+    const onClickCapture = (event: MouseEvent) => {
+      const current = root();
+      if (current) suppressSearchFocusForProductAdd(current, event.target);
     };
 
     const onClick = (event: MouseEvent) => {
@@ -126,11 +151,13 @@ export function PosCheckoutPresentation() {
     schedule();
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["disabled"] });
+    document.addEventListener("click", onClickCapture, true);
     document.addEventListener("click", onClick);
     document.addEventListener("keydown", onKeyDown);
 
     return () => {
       observer.disconnect();
+      document.removeEventListener("click", onClickCapture, true);
       document.removeEventListener("click", onClick);
       document.removeEventListener("keydown", onKeyDown);
     };
