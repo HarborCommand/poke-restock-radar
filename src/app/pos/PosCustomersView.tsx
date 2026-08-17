@@ -2,6 +2,8 @@
 
 import { Search, ShoppingCart, UserRound, Users } from "lucide-react";
 import { useEffect, useState } from "react";
+import { PosCustomerProfileSheet } from "./PosCustomerProfileSheet";
+import customerStyles from "./PosCustomersView.module.css";
 import styles from "./PosRegisterShell.module.css";
 
 export type PosRegisterCustomer = {
@@ -36,6 +38,7 @@ function activityLabel(value: string | null, fallback: string) {
 export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosRegisterCustomer) => void }) {
   const [query, setQuery] = useState("");
   const [customers, setCustomers] = useState<PosRegisterCustomer[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<PosRegisterCustomer | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,13 +72,18 @@ export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosReg
     };
   }, [query]);
 
+  function customerUpdated(updated: PosRegisterCustomer) {
+    setCustomers((current) => current.map((customer) => (customer.id === updated.id ? { ...customer, ...updated } : customer)));
+    setSelectedCustomer((current) => (current?.id === updated.id ? { ...current, ...updated } : current));
+  }
+
   return (
     <section className={styles.view} aria-label="POS customers">
       <div className={styles.viewHeader}>
         <div>
           <span className={styles.eyebrow}>Customer directory</span>
           <h1>Customers</h1>
-          <p>Find a customer, check rewards and purchase history, then attach them from Checkout.</p>
+          <p>Tap a customer to open their profile, update contact information, review activity or send them to Checkout.</p>
         </div>
         <div className={styles.summaryPills}><span><b>{total}</b> customers</span></div>
       </div>
@@ -99,7 +107,21 @@ export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosReg
         customers.length ? (
           <div className={styles.customerList}>
             {customers.map((customer) => (
-              <article className={styles.customerRow} key={customer.id}>
+              <article
+                className={`${styles.customerRow} ${customerStyles.clickableRow}`}
+                key={customer.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open profile for ${customer.displayName}`}
+                onClick={() => setSelectedCustomer(customer)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedCustomer(customer);
+                  }
+                }}
+              >
                 <span className={styles.avatar}><UserRound size={20} aria-hidden="true" /></span>
                 <div className={styles.customerIdentity}>
                   <strong>{customer.displayName}</strong>
@@ -117,7 +139,14 @@ export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosReg
                   <small>Last activity</small>
                   <strong>{activityLabel(customer.lastActivityAt, customer.joinedAt)}</strong>
                 </div>
-                <button className={styles.rowAction} type="button" onClick={() => onCheckout(customer)}>
+                <button
+                  className={styles.rowAction}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCheckout(customer);
+                  }}
+                >
                   <ShoppingCart size={16} aria-hidden="true" />
                   Checkout
                 </button>
@@ -131,6 +160,15 @@ export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosReg
             <span>Try another name, email or phone.</span>
           </div>
         )
+      ) : null}
+
+      {selectedCustomer ? (
+        <PosCustomerProfileSheet
+          customer={selectedCustomer}
+          onClose={() => setSelectedCustomer(null)}
+          onCheckout={onCheckout}
+          onUpdated={customerUpdated}
+        />
       ) : null}
     </section>
   );
