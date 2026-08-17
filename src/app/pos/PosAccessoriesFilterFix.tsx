@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 
+// POS-only classification guard: unmatched sealed inventory belongs in All, not Accessories.
 const ACCESSORY_TERMS = [
   "accessory",
   "accessories",
