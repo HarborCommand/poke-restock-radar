@@ -1,0 +1,52 @@
+.saleRowDensity {
+  min-width: 0;
+}
+
+/*
+ * Square-style basket rows keep a stable readable height. Once the visible
+ * basket is full, additional products stay in the same scrollable item list
+ * instead of compressing the rows smaller and smaller.
+ */
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line) {
+  grid-template-columns: 48px minmax(0, 1fr) 108px 34px !important;
+  grid-template-rows: auto auto !important;
+  min-height: 126px !important;
+  height: auto !important;
+  padding-block: 10px !important;
+  column-gap: 10px !important;
+  row-gap: 4px !important;
+  flex: 0 0 auto !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line .inventory-image-frame),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line .inventory-image-frame),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line .inventory-image-frame) {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line-copy > span),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-line-price-stack) {
+  font-size: inherit !important;
+  line-height: inherit !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity) {
+  grid-template-columns: 34px 42px 34px !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity button),
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity input) {
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+}
+
+.saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity input) {
+  width: 42px !important;
+  min-width: 42px !important;
+}
