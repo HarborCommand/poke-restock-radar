@@ -1,0 +1,133 @@
+.uiPolish {
+  --pos-polish-ink: #18181b;
+  --pos-polish-muted: #78716c;
+  --pos-polish-border: #e7e5e4;
+  min-width: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Keep the register chrome aligned with the branded loading experience. */
+.uiPolish :global([data-pos-authenticated="true"] [aria-label="GameDayGrabs POS"] > span:first-child) {
+  overflow: hidden;
+  background: #18181b url("/icon.png?v=gdg-icons-v1") center / cover no-repeat !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  box-shadow: 0 1px 4px rgba(24, 24, 27, 0.14);
+}
+
+/* Normalize iPad-sized interaction targets without changing register behavior. */
+.uiPolish :global([data-pos-authenticated="true"] header button),
+.uiPolish :global([data-pos-authenticated="true"] [role="menu"] a),
+.uiPolish :global([data-pos-authenticated="true"] [role="menu"] button),
+.uiPolish :global([data-pos-register-view="products"] button),
+.uiPolish :global([data-pos-register-view="customers"] button),
+.uiPolish :global([data-pos-register-view="sales"] button) {
+  min-height: 44px;
+}
+
+.uiPolish :global([data-pos-authenticated="true"] button:focus-visible),
+.uiPolish :global([data-pos-authenticated="true"] a[role="menuitem"]:focus-visible) {
+  outline: 3px solid rgba(24, 24, 27, 0.18);
+  outline-offset: 2px;
+}
+
+/* Checkout toolbar: keep Scan, customer and category controls on one visual rhythm. */
+.uiPolish :global([data-pos-authenticated="true"] .pos-register-toolbar-actions .pos-scanner-focus-button),
+.uiPolish :global([data-pos-authenticated="true"] .pos-register-toolbar-actions .pos-customer-invite-button),
+.uiPolish :global([data-pos-authenticated="true"] .pos-filter) {
+  min-height: 44px !important;
+}
+
+.uiPolish :global([data-pos-authenticated="true"] .pos-filter) {
+  line-height: 1 !important;
+}
+
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-header button) {
+  min-height: 42px !important;
+}
+
+/*
+ * The quantity control has a fixed 132px lane. Use that lane for larger tap
+ * targets rather than shrinking +/- buttons as the basket becomes dense.
+ * 44 + 32 + 44 + two 3px gaps + 6px container padding = 132px exactly.
+ */
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-quantity),
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-quantity),
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity) {
+  width: 132px !important;
+  max-width: 132px !important;
+  grid-template-columns: 44px 32px 44px !important;
+  gap: 3px !important;
+  padding: 3px !important;
+  box-sizing: border-box !important;
+}
+
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-quantity button),
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-quantity button),
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity button) {
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+}
+
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-quantity input),
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-quantity input),
+.uiPolish :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-quantity input) {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  padding-inline: 0 !important;
+  text-align: center !important;
+}
+
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel),
+.uiPolish :global([data-pos-authenticated="true"] .pos-total-box) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Payment card: readable helper copy and consistent control targets at every tender type. */
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel[role="dialog"][aria-label="Payment"] button) {
+  min-height: 44px;
+}
+
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel[role="dialog"][aria-label="Payment"] .pos-payment-panel h3) {
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+}
+
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel[role="dialog"][aria-label="Payment"] .pos-payment-panel p),
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel[role="dialog"][aria-label="Payment"] .pos-payment-panel small),
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel[role="dialog"][aria-label="Payment"] .pos-receipt-email-panel small) {
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+}
+
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel[role="dialog"][aria-label="Payment"] input),
+.uiPolish :global([data-pos-authenticated="true"] .pos-cart-panel[role="dialog"][aria-label="Payment"] select) {
+  min-height: 44px;
+}
+
+/* Customer profile: remove the remaining 10px utility copy and keep actions comfortably tappable. */
+.uiPolish :global(aside[role="dialog"][aria-label^="Customer profile for"] button) {
+  min-height: 44px;
+}
+
+.uiPolish :global(aside[role="dialog"][aria-label^="Customer profile for"] small),
+.uiPolish :global(aside[role="dialog"][aria-label^="Customer profile for"] [aria-label="Customer summary"] span) {
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+}
+
+.uiPolish :global(aside[role="dialog"][aria-label^="Customer profile for"] label > span) {
+  font-size: 12px !important;
+}
+
+/* Camera scanner keeps its dark treatment, but the instruction copy should not be micro-text. */
+.uiPolish :global(section[role="dialog"][aria-label="Barcode scanner"] p) {
+  font-size: 11px !important;
+  line-height: 1.45 !important;
+}
