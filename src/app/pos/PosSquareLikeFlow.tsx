@@ -114,10 +114,10 @@ export function PosSquareLikeFlow() {
 
   useEffect(() => {
     if (!cartPanel) return;
-    if (mode === "payment") {
+    if (mode === "payment" || mode === "customer") {
       cartPanel.setAttribute("role", "dialog");
       cartPanel.setAttribute("aria-modal", "true");
-      cartPanel.setAttribute("aria-label", "Payment");
+      cartPanel.setAttribute("aria-label", mode === "payment" ? "Payment" : "Attach customer");
     } else {
       cartPanel.removeAttribute("role");
       cartPanel.removeAttribute("aria-modal");
@@ -128,6 +128,47 @@ export function PosSquareLikeFlow() {
       cartPanel.removeAttribute("role");
       cartPanel.removeAttribute("aria-modal");
       cartPanel.removeAttribute("aria-label");
+    };
+  }, [cartPanel, mode]);
+
+  useEffect(() => {
+    if (!cartPanel || mode !== "customer") return;
+
+    const customerPanel = cartPanel.querySelector<HTMLElement>('.pos-customer-panel[aria-label="Optional customer contact"]');
+    if (!customerPanel) return;
+
+    const searchInput = customerPanel.querySelector<HTMLInputElement>('input[aria-label="Search customers by name, email, or phone"]');
+    const focusTimer = window.setTimeout(() => {
+      searchInput?.focus({ preventScroll: true });
+      searchInput?.select();
+    }, 90);
+
+    let pendingCard: HTMLElement | null = null;
+
+    const finishWhenSelected = () => {
+      if (!pendingCard?.classList.contains("selected")) return;
+      pendingCard = null;
+      setMode("sale");
+    };
+
+    const handleCustomerClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest<HTMLButtonElement>("button");
+      if (!button || !button.textContent?.trim().toLowerCase().includes("select customer")) return;
+      pendingCard = button.closest<HTMLElement>(".customer-search-profile-card");
+      if (pendingCard?.classList.contains("selected")) {
+        window.setTimeout(() => setMode("sale"), 0);
+      }
+    };
+
+    customerPanel.addEventListener("click", handleCustomerClick, true);
+    const observer = new MutationObserver(finishWhenSelected);
+    observer.observe(customerPanel, { subtree: true, attributes: true, attributeFilter: ["class"] });
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      observer.disconnect();
+      customerPanel.removeEventListener("click", handleCustomerClick, true);
     };
   }, [cartPanel, mode]);
 
@@ -147,7 +188,9 @@ export function PosSquareLikeFlow() {
     <>
       {mode === "payment"
         ? createPortal(<div className="pos-payment-backdrop" aria-hidden="true" />, document.body)
-        : null}
+        : mode === "customer"
+          ? createPortal(<div className="pos-customer-backdrop" aria-hidden="true" />, document.body)
+          : null}
 
       {cartHeader && mode === "sale"
         ? createPortal(
@@ -185,7 +228,7 @@ export function PosSquareLikeFlow() {
               </button>
               <div>
                 <small>Current sale</small>
-                <strong>{mode === "payment" ? "Payment" : "Customer"}</strong>
+                <strong>{mode === "payment" ? "Payment" : "Attach customer"}</strong>
               </div>
               <span className={styles.screenTotal}>{moneyFromCents(totalCents)}</span>
             </div>
