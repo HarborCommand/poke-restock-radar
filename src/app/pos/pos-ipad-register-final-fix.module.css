@@ -209,3 +209,43 @@
     padding-left: 14px !important;
   }
 }
+
+/*
+ * Portrait iPad correction. Some iPad Safari/PWA viewport widths do not hit
+ * the narrower width breakpoint consistently, so key this layout to portrait
+ * orientation as well. Give the product title the quantity lane, then push the
+ * stepper visibly lower so the title has a clean two-line header area.
+ */
+@media (orientation: portrait) {
+  .finalFix.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy) {
+    overflow: visible !important;
+    padding-right: 0 !important;
+  }
+
+  .finalFix.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy > strong) {
+    position: relative !important;
+    z-index: 3 !important;
+    display: -webkit-box !important;
+    width: calc(100% + 142px) !important;
+    max-width: calc(100% + 142px) !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: normal !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    line-height: 1.18 !important;
+  }
+
+  .finalFix.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-quantity),
+  .finalFix.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line > .pos-cart-quantity),
+  .finalFix.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line > .pos-cart-quantity) {
+    grid-row: 2 !important;
+    align-self: start !important;
+    margin-top: 28px !important;
+    transform: none !important;
+  }
+
+  .finalFix.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line) {
+    min-height: 176px !important;
+  }
+}
