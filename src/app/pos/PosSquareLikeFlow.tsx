@@ -1,8 +1,9 @@
 "use client";
 
-import { ChevronLeft, CreditCard, UserRound } from "lucide-react";
+import { Check, ChevronLeft, CreditCard, UserRound } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
+import feedbackStyles from "./PosCustomerAttachFeedback.module.css";
 import styles from "./PosSquareLikeFlow.module.css";
 
 type FlowMode = "sale" | "customer" | "payment";
@@ -21,6 +22,14 @@ function currentTotalCents() {
 
 function currentCartCount() {
   return document.querySelectorAll(".pos-cart-lines > .pos-cart-line").length;
+}
+
+function currentAttachedCustomerName(panel: HTMLElement | null) {
+  return (
+    panel
+      ?.querySelector<HTMLElement>(".pos-selected-customer .customer-profile-summary-card h4")
+      ?.textContent?.trim() || null
+  );
 }
 
 function moneyFromCents(cents: number) {
@@ -48,6 +57,8 @@ export function PosSquareLikeFlow() {
   const [cartHeader, setCartHeader] = useState<HTMLElement | null>(null);
   const [cartCount, setCartCount] = useState(0);
   const [totalCents, setTotalCents] = useState(0);
+  const [attachedCustomerName, setAttachedCustomerName] = useState<string | null>(null);
+  const [customerToast, setCustomerToast] = useState<string | null>(null);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -63,15 +74,18 @@ export function PosSquareLikeFlow() {
       const nextHeader = nextPanel?.querySelector<HTMLElement>(".pos-cart-header") ?? null;
       const nextCount = currentCartCount();
       const nextTotal = currentTotalCents();
+      const nextCustomerName = currentAttachedCustomerName(nextPanel);
 
       setCartPanel((current) => (current === nextPanel ? current : nextPanel));
       setCartHeader((current) => (current === nextHeader ? current : nextHeader));
       setCartCount((current) => (current === nextCount ? current : nextCount));
       setTotalCents((current) => (current === nextTotal ? current : nextTotal));
+      setAttachedCustomerName((current) => (current === nextCustomerName ? current : nextCustomerName));
 
       if (nextCount === 0) {
         window.setTimeout(() => {
-          if (!hasActiveSquarePending()) setMode("sale");
+          if (hasActiveSquarePending()) return;
+          setMode((current) => (current === "payment" ? "sale" : current));
         }, 120);
       }
     };
@@ -100,6 +114,12 @@ export function PosSquareLikeFlow() {
       document.removeEventListener("change", schedule, true);
     };
   }, []);
+
+  useEffect(() => {
+    if (!customerToast) return;
+    const timer = window.setTimeout(() => setCustomerToast(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [customerToast]);
 
   useEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-pos-authenticated="true"]');
@@ -144,10 +164,23 @@ export function PosSquareLikeFlow() {
     }, 90);
 
     let pendingCard: HTMLElement | null = null;
+    let pendingCustomerName: string | null = null;
+    let pendingSelection = false;
 
     const finishWhenSelected = () => {
-      if (!pendingCard?.classList.contains("selected")) return;
+      if (!pendingSelection) return;
+
+      const attachedName = currentAttachedCustomerName(cartPanel);
+      const cardSelected = Boolean(pendingCard?.classList.contains("selected"));
+      if (!attachedName && !cardSelected) return;
+      if (attachedName && pendingCustomerName && attachedName !== pendingCustomerName && !cardSelected) return;
+
+      const selectedName = attachedName || pendingCustomerName || "Customer";
+      pendingSelection = false;
       pendingCard = null;
+      pendingCustomerName = null;
+      setAttachedCustomerName(selectedName);
+      setCustomerToast(selectedName);
       setMode("sale");
     };
 
@@ -155,15 +188,22 @@ export function PosSquareLikeFlow() {
       if (!(event.target instanceof Element)) return;
       const button = event.target.closest<HTMLButtonElement>("button");
       if (!button || !button.textContent?.trim().toLowerCase().includes("select customer")) return;
+
       pendingCard = button.closest<HTMLElement>(".customer-search-profile-card");
-      if (pendingCard?.classList.contains("selected")) {
-        window.setTimeout(() => setMode("sale"), 0);
-      }
+      pendingCustomerName =
+        pendingCard?.querySelector<HTMLElement>(".customer-search-profile-main strong")?.textContent?.trim() || null;
+      pendingSelection = true;
+      window.setTimeout(finishWhenSelected, 0);
     };
 
     customerPanel.addEventListener("click", handleCustomerClick, true);
     const observer = new MutationObserver(finishWhenSelected);
-    observer.observe(customerPanel, { subtree: true, attributes: true, attributeFilter: ["class"] });
+    observer.observe(customerPanel, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "disabled"]
+    });
 
     return () => {
       window.clearTimeout(focusTimer);
@@ -183,6 +223,7 @@ export function PosSquareLikeFlow() {
   if (!cartPanel) return null;
 
   const chargeDisabled = cartCount <= 0 || totalCents <= 0;
+  const customerAttached = Boolean(attachedCustomerName);
 
   return (
     <>
@@ -192,11 +233,36 @@ export function PosSquareLikeFlow() {
           ? createPortal(<div className="pos-customer-backdrop" aria-hidden="true" />, document.body)
           : null}
 
+      {customerToast
+        ? createPortal(
+            <div className={feedbackStyles.customerToast} role="status" aria-live="polite">
+              <span className={feedbackStyles.customerToastIcon} aria-hidden="true">
+                <Check size={18} />
+              </span>
+              <div>
+                <strong>Customer attached</strong>
+                <span>{customerToast}</span>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
       {cartHeader && mode === "sale"
         ? createPortal(
-            <button className={styles.customerButton} type="button" onClick={() => setMode("customer")}>
-              <UserRound size={17} aria-hidden="true" />
-              <span>Customer</span>
+            <button
+              className={`${styles.customerButton}${customerAttached ? ` ${feedbackStyles.customerButtonAttached}` : ""}`}
+              type="button"
+              aria-label={
+                customerAttached
+                  ? `Customer attached: ${attachedCustomerName}. Tap to change customer.`
+                  : "Attach customer to current sale"
+              }
+              title={customerAttached ? `Attached: ${attachedCustomerName}` : "Attach customer"}
+              onClick={() => setMode("customer")}
+            >
+              {customerAttached ? <Check size={17} aria-hidden="true" /> : <UserRound size={17} aria-hidden="true" />}
+              <span>{customerAttached ? "Customer attached" : "Customer"}</span>
             </button>,
             cartHeader
           )
