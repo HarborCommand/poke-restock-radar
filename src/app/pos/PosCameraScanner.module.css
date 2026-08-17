@@ -20,6 +20,8 @@
   border-radius: 24px;
   background: #111113;
   color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.38);
 }
 
@@ -40,9 +42,10 @@
 
 .heading span {
   color: #a1a1aa;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 850;
   letter-spacing: 0.08em;
+  line-height: 1.25;
   text-transform: uppercase;
 }
 
@@ -67,6 +70,13 @@
   font-weight: 850;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+
+.closeButton:focus-visible,
+.controlButton:focus-visible,
+.externalButton:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.48);
+  outline-offset: 2px;
 }
 
 .closeButton {
@@ -134,6 +144,7 @@
   color: #f4f4f5;
   font-size: 12px;
   font-weight: 800;
+  line-height: 1.35;
   text-align: center;
   backdrop-filter: blur(10px);
 }
@@ -166,9 +177,9 @@
   grid-column: 1 / -1;
   margin: 1px 2px 0;
   color: #a1a1aa;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
-  line-height: 1.4;
+  line-height: 1.45;
   text-align: center;
 }
 
