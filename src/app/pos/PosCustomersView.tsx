@@ -3,7 +3,7 @@
 import { Search, ShoppingCart, UserRound, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PosCustomerProfileSheet } from "./PosCustomerProfileSheet";
-import profileStyles from "./PosCustomerProfileSheet.module.css";
+import customerStyles from "./PosCustomersView.module.css";
 import styles from "./PosRegisterShell.module.css";
 
 export type PosRegisterCustomer = {
@@ -108,7 +108,7 @@ export function PosCustomersView({ onCheckout }: { onCheckout: (customer: PosReg
           <div className={styles.customerList}>
             {customers.map((customer) => (
               <article
-                className={`${styles.customerRow} ${profileStyles.clickableRow}`}
+                className={`${styles.customerRow} ${customerStyles.clickableRow}`}
                 key={customer.id}
                 role="button"
                 tabIndex={0}
