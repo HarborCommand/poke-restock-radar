@@ -14,6 +14,7 @@ import registerStyles from "./ipad-register-fix.module.css";
 import squareStyles from "./pos-square-register.module.css";
 import overflowStyles from "./pos-ipad-cart-overflow.module.css";
 import saleContainmentStyles from "./pos-square-sale-containment.module.css";
+import saleRowDensityStyles from "./pos-square-sale-row-density.module.css";
 
 export const metadata: Metadata = {
   applicationName: "GameDayGrabs POS",
@@ -29,7 +30,7 @@ export const metadata: Metadata = {
 
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
-    <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix} ${saleContainmentStyles.saleContainmentFix}`}>
+    <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix} ${saleContainmentStyles.saleContainmentFix} ${saleRowDensityStyles.saleRowDensity}`}>
       <PosVisibleViewport />
       <PosRegisterShell>{children}</PosRegisterShell>
       <PosCheckoutPresentation />
