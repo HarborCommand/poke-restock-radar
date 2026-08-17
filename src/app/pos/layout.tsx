@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { PosAccessoriesFilterFix } from "./PosAccessoriesFilterFix";
 import { PosCartImageFix } from "./PosCartImageFix";
 import { PosCashTender } from "./PosCashTender";
 import { PosCheckoutPresentation } from "./PosCheckoutPresentation";
@@ -40,6 +41,7 @@ export default function PosLayout({ children }: { children: ReactNode }) {
       <PosVisibleViewport />
       <PosRegisterShell>{children}</PosRegisterShell>
       <PosCheckoutPresentation />
+      <PosAccessoriesFilterFix />
       <PosSquareLikeFlow />
       <PosCartImageFix />
       <PosScannerFocusButton />
