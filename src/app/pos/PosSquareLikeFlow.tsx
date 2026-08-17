@@ -112,6 +112,25 @@ export function PosSquareLikeFlow() {
     };
   }, [cartPanel, mode]);
 
+  useEffect(() => {
+    if (!cartPanel) return;
+    if (mode === "payment") {
+      cartPanel.setAttribute("role", "dialog");
+      cartPanel.setAttribute("aria-modal", "true");
+      cartPanel.setAttribute("aria-label", "Payment");
+    } else {
+      cartPanel.removeAttribute("role");
+      cartPanel.removeAttribute("aria-modal");
+      cartPanel.removeAttribute("aria-label");
+    }
+
+    return () => {
+      cartPanel.removeAttribute("role");
+      cartPanel.removeAttribute("aria-modal");
+      cartPanel.removeAttribute("aria-label");
+    };
+  }, [cartPanel, mode]);
+
   const backToSale = () => {
     if (mode === "payment" && hasActiveSquarePending()) {
       window.alert("Finish or cancel the current Square payment before leaving Payment.");
@@ -126,6 +145,10 @@ export function PosSquareLikeFlow() {
 
   return (
     <>
+      {mode === "payment"
+        ? createPortal(<div className="pos-payment-backdrop" aria-hidden="true" />, document.body)
+        : null}
+
       {cartHeader && mode === "sale"
         ? createPortal(
             <button className={styles.customerButton} type="button" onClick={() => setMode("customer")}>
