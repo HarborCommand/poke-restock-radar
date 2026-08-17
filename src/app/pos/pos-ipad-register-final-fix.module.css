@@ -36,9 +36,9 @@
 }
 
 /*
- * Payment should behave like a register payment card, not a second workspace
- * below the catalog. Keep the sale screen in place, dim it, and place the
- * existing payment controls in a centered, viewport-safe modal card.
+ * Payment behaves like a dedicated register card over the checkout screen.
+ * Give the card enough horizontal room for payment controls while keeping it
+ * inside the visible iPad viewport. The card itself is the only scroll surface.
  */
 .finalFix :global(.pos-payment-backdrop) {
   position: fixed;
@@ -60,32 +60,89 @@
   right: auto !important;
   bottom: auto !important;
   z-index: 5000 !important;
-  width: min(620px, calc(100vw - 48px)) !important;
+  width: min(880px, calc(100vw - 56px)) !important;
   height: auto !important;
   min-height: 0 !important;
-  max-height: calc(100dvh - 112px) !important;
+  max-height: calc(100dvh - 72px) !important;
   transform: translate(-50%, -50%) !important;
   align-self: auto !important;
   margin: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   overscroll-behavior: contain !important;
+  scroll-padding-bottom: 24px !important;
   border: 1px solid rgba(60, 60, 67, 0.16) !important;
-  border-radius: 22px !important;
+  border-radius: 24px !important;
   background: #ffffff !important;
-  padding: 18px 18px max(18px, env(safe-area-inset-bottom)) !important;
+  padding: 20px 22px max(22px, env(safe-area-inset-bottom)) !important;
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28) !important;
   box-sizing: border-box !important;
   -webkit-overflow-scrolling: touch;
 }
 
 .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-cart-panel > [class*="screenHeader"]) {
-  top: -18px !important;
+  top: -20px !important;
+  margin-right: -22px !important;
+  margin-left: -22px !important;
+  padding-right: 22px !important;
+  padding-left: 22px !important;
+}
+
+/* Trim vertical dead space so the complete payment workflow fits comfortably. */
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-total-box) {
+  flex: 0 0 auto !important;
+  margin-bottom: 12px !important;
+  padding-top: 2px !important;
+  padding-bottom: 12px !important;
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-total-box .total strong) {
+  font-size: clamp(42px, 5vw, 54px) !important;
+}
+
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-payment-panel) {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 18px !important;
+}
+
+/*
+ * The previous sticky Complete Sale button could float on top of the cash
+ * amount field. Keep it in normal document flow inside the modal so controls
+ * never overlap; the modal can scroll if the selected payment method expands.
+ */
+.finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-complete-button) {
+  position: relative !important;
+  bottom: auto !important;
+  z-index: 1 !important;
+  min-height: 56px !important;
+  margin-top: 16px !important;
+  box-shadow: none !important;
+}
+
+@media (min-width: 900px) {
+  .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-payment-options) {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-payment) {
+    min-width: 0 !important;
+    padding-right: 10px !important;
+    padding-left: 10px !important;
+    white-space: nowrap !important;
+  }
 }
 
 @media (min-width: 780px) and (max-width: 1180px) {
   .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-workspace) {
     grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.88fr) !important;
+  }
+}
+
+@media (max-width: 899px) {
+  .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-payment-options) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
@@ -95,5 +152,13 @@
     max-height: calc(100dvh - 36px) !important;
     border-radius: 18px !important;
     padding: 14px 14px max(14px, env(safe-area-inset-bottom)) !important;
+  }
+
+  .finalFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-cart-panel > [class*="screenHeader"]) {
+    top: -14px !important;
+    margin-right: -14px !important;
+    margin-left: -14px !important;
+    padding-right: 14px !important;
+    padding-left: 14px !important;
   }
 }
