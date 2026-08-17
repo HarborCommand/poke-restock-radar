@@ -1,0 +1,46 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4950;
+  display: grid;
+  place-items: center;
+  background: #f5f5f7;
+}
+
+.logo {
+  display: block;
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+  animation: posLogoPulse 1.45s ease-in-out infinite;
+  filter: drop-shadow(0 12px 30px rgba(15, 23, 42, 0.12));
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes posLogoPulse {
+  0%,
+  100% {
+    transform: scale(0.97);
+    opacity: 0.82;
+  }
+
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo {
+    animation: none;
+  }
+}
