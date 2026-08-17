@@ -55,9 +55,16 @@ function isExplicitAccessory(card: HTMLElement) {
   return ACCESSORY_TERMS.some((term) => copy.includes(term));
 }
 
+function hideCard(card: HTMLElement) {
+  card.dataset.posAccessoryFilterHidden = "true";
+  card.setAttribute("aria-hidden", "true");
+  card.style.setProperty("display", "none", "important");
+}
+
 function restoreCards(root: HTMLElement) {
   root.querySelectorAll<HTMLElement>('.pos-product-card[data-pos-accessory-filter-hidden="true"]').forEach((card) => {
-    card.hidden = false;
+    card.style.removeProperty("display");
+    card.removeAttribute("aria-hidden");
     delete card.dataset.posAccessoryFilterHidden;
   });
 }
@@ -67,7 +74,7 @@ function activeFilterFromDom(root: HTMLElement) {
   const explicitlyActive = filters.find(
     (button) =>
       button.getAttribute("aria-pressed") === "true" ||
-      button.getAttribute("aria-current") === "true" ||
+      Boolean(button.getAttribute("aria-current")) ||
       button.dataset.active === "true" ||
       button.classList.contains("active")
   );
@@ -93,9 +100,7 @@ export function PosAccessoriesFilterFix() {
       if (selectedFilter !== "accessories") return;
 
       current.querySelectorAll<HTMLElement>(".pos-items-grid .pos-product-card").forEach((card) => {
-        if (isExplicitAccessory(card)) return;
-        card.hidden = true;
-        card.dataset.posAccessoryFilterHidden = "true";
+        if (!isExplicitAccessory(card)) hideCard(card);
       });
     };
 
