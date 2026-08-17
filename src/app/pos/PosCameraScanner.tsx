@@ -2,7 +2,7 @@
 
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
-import { Camera, CameraIcon, Keyboard, SwitchCamera, X } from "lucide-react";
+import { Keyboard, SwitchCamera, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./PosCameraScanner.module.css";
 
