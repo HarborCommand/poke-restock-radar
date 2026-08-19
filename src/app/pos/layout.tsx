@@ -6,6 +6,7 @@ import { PosCashTender } from "./PosCashTender";
 import { PosCheckoutPresentation } from "./PosCheckoutPresentation";
 import { PosLoadingBrand } from "./PosLoadingBrand";
 import { PosRegisterShell } from "./PosRegisterShell";
+import { PosSaleViewportGuard } from "./PosSaleViewportGuard";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
 import { PosSquareLikeFlow } from "./PosSquareLikeFlow";
 import { PosSquarePayment } from "./PosSquarePayment";
@@ -21,6 +22,7 @@ import saleRowDensityStyles from "./pos-square-sale-row-density.module.css";
 import finalFixStyles from "./pos-ipad-register-final-fix.module.css";
 import polishStyles from "./pos-ui-polish.module.css";
 import cartTitleLayoutStyles from "./pos-cart-title-layout.module.css";
+import saleViewportGuardStyles from "./pos-sale-viewport-guard.module.css";
 
 export const metadata: Metadata = {
   applicationName: "GameDayGrabs POS",
@@ -36,9 +38,10 @@ export const metadata: Metadata = {
 
 export default function PosLayout({ children }: { children: ReactNode }) {
   return (
-    <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix} ${saleContainmentStyles.saleContainmentFix} ${saleRowDensityStyles.saleRowDensity} ${finalFixStyles.finalFix} ${polishStyles.uiPolish} ${cartTitleLayoutStyles.cartTitleLayout}`}>
+    <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix} ${saleContainmentStyles.saleContainmentFix} ${saleRowDensityStyles.saleRowDensity} ${finalFixStyles.finalFix} ${polishStyles.uiPolish} ${cartTitleLayoutStyles.cartTitleLayout} ${saleViewportGuardStyles.saleViewportGuard}`}>
       <PosLoadingBrand />
       <PosVisibleViewport />
+      <PosSaleViewportGuard />
       <PosRegisterShell>{children}</PosRegisterShell>
       <PosCheckoutPresentation />
       <PosAccessoriesFilterFix />
