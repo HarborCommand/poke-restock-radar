@@ -7,7 +7,8 @@
  * does not line up perfectly with nested 100dvh/100% layout math. The companion
  * client guard measures the actual visible space beneath Current Sale and puts
  * that exact pixel height on the panel. This keeps Charge in view even when
- * later cart-title/quantity presentation rules make rows taller.
+ * later cart-title/quantity presentation rules make rows taller. Keep this
+ * layer last in PosLayout so it remains the final sale-screen boundary.
  */
 .saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel) {
   height: var(--pos-sale-visible-height, 100%) !important;
