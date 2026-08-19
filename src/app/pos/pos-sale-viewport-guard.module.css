@@ -1,0 +1,46 @@
+.saleViewportGuard {
+  min-width: 0;
+}
+
+/*
+ * Final sale-screen viewport boundary. iPadOS can report a visual viewport that
+ * does not line up perfectly with nested 100dvh/100% layout math. The companion
+ * client guard measures the actual visible space beneath Current Sale and puts
+ * that exact pixel height on the panel. This keeps Charge in view even when
+ * later cart-title/quantity presentation rules make rows taller.
+ */
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel) {
+  height: var(--pos-sale-visible-height, 100%) !important;
+  min-height: 0 !important;
+  max-height: var(--pos-sale-visible-height, 100%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  padding-bottom: 18px !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+/* PosSquareLikeFlow portals this footer directly into .pos-cart-panel. */
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel > [aria-label="Checkout action"]) {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 40 !important;
+  display: grid !important;
+  width: 100% !important;
+  min-height: 66px !important;
+  flex: 0 0 auto !important;
+  margin-top: 8px !important;
+  background: #ffffff !important;
+}
