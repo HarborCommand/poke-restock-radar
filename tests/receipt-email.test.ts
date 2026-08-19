@@ -1196,9 +1196,10 @@ test("POS sale integrity is independent from receipt-email delivery failure", ()
   assert.doesNotMatch(receiptEmailSource, /throw sendResult|throw new Error\(sendResult/);
 });
 
-test("manual POS receipt resend is admin-only, rate limited, and constrained to canonical receipts", () => {
+test("manual POS receipt resend requires POS authorization, is rate limited, and constrained to canonical receipts", () => {
   assert.match(posResendRouteSource, /requireUser/);
-  assert.match(posResendRouteSource, /authorizeAdminMutation/);
+  assert.match(posResendRouteSource, /authorizePosMutation/);
+  assert.match(posResendRouteSource, /resolvePosStoreUser/);
   assert.match(posResendRouteSource, /receiptEmailResendSchema/);
   assert.match(posResendRouteSource, /admin_receipt_email/);
   assert.match(posResendRouteSource, /sendPosReceiptEmail/);

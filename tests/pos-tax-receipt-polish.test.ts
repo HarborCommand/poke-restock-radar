@@ -119,10 +119,11 @@ test("Florida configured POS tax uses integer cents and reconciles rounding boun
   assert.equal(calculate(10_000_000).taxCents, 700_000);
 });
 
-test("POS tax quote route is authenticated, same-origin admin-only, and private", () => {
+test("POS tax quote route is authenticated, same-origin POS-authorized, and private", () => {
   const route = readSource("src/app/api/radar/pos/tax-quote/route.ts");
   assert.match(route, /requireUser\(\)/);
-  assert.match(route, /authorizeAdminMutation\(request, user\)/);
+  assert.match(route, /authorizePosMutation\(request, user\)/);
+  assert.match(route, /resolvePosStoreUser\(user\)/);
   assert.match(route, /posTaxQuoteSchema\.parse/);
   assert.match(route, /privateOk/);
   assert.match(route, /safeMutationError/);

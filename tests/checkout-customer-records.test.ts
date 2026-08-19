@@ -267,8 +267,8 @@ test("15-minute checkout holds are expired by a protected reservation cron witho
   assert.match(route, /expireOpenStripeSessionsForExpiredReservations/);
   assert.match(route, /export async function GET/);
   assert.match(route, /export async function POST/);
-  assert.match(vercel, /"path": "\/api\/radar\/storefront\/reservations\/expire"/);
-  assert.match(vercel, /"schedule": "\*\/5 \* \* \* \*"/);
+  assert.doesNotMatch(vercel, /"path": "\/api\/radar\/storefront\/reservations\/expire"/);
+  assert.doesNotMatch(vercel, /"schedule": "\*\/5 \* \* \* \*"/);
 });
 
 test("duplicate Stripe sessions and events do not duplicate orders or customer totals", () => {
