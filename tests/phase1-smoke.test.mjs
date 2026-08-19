@@ -651,15 +651,11 @@ test("Phase 6 PWA and push notification pieces exist", () => {
 
 test("Phase 7 deployment readiness and health checks exist", () => {
   const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
-  assert.equal(vercel.crons.some((cron) => cron.path === "/api/radar/monitor/cron"), false);
+  const crons = Array.isArray(vercel.crons) ? vercel.crons : [];
+  assert.equal(crons.some((cron) => cron.path === "/api/radar/monitor/cron"), false);
   assert.deepEqual(
-    vercel.crons.map((cron) => `${cron.path} ${cron.schedule}`),
-    [
-      "/api/radar/storefront/reservations/expire */5 * * * *",
-      "/api/radar/releases/sync/cron 0 10 * * *",
-      "/api/radar/inventory/market-sync/cron 0 11 * * *",
-      "/api/radar/rewards/audit/cron 30 11 * * *"
-    ]
+    crons.map((cron) => `${cron.path} ${cron.schedule}`),
+    []
   );
 
   const files = [

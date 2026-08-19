@@ -17,6 +17,7 @@ process.env.CUSTOMER_REWARDS_ENABLED = "false";
 process.env.CUSTOMER_POS_REWARDS_ENABLED = "false";
 process.env.CUSTOMER_REWARD_REDEMPTION_ENABLED = "false";
 process.env.CUSTOMER_REWARD_ADMIN_ADJUSTMENTS_ENABLED = "false";
+process.env.POS_SALES_TAX_ENABLED = "false";
 
 execFileSync(process.execPath, [path.join(projectRoot, "node_modules/tsx/dist/cli.mjs"), "prisma/init-sqlite.ts"], {
   cwd: projectRoot,

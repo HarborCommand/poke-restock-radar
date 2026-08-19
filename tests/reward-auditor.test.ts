@@ -165,6 +165,9 @@ test("reward auditor has no customer-facing UI and cron is protected", () => {
   assert.match(route, /cronAuthorized/);
   assert.match(route, /CRON_SECRET/);
   assert.match(route, /privateNoStoreHeaders/);
-  assert.match(vercel, /\/api\/radar\/rewards\/audit\/cron/);
+  assert.ok(
+    !JSON.parse(vercel).crons?.length,
+    "Reward audit cron must not be scheduled automatically by Vercel."
+  );
   assert.doesNotMatch(app, /RewardAuditFinding|reward_audit|reconciliation_finding/);
 });

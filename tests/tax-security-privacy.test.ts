@@ -13,6 +13,7 @@ import {
 } from "../src/lib/validation";
 import { privateNoStoreHeaders } from "../src/lib/http";
 import { authorizeAdminMutation } from "../src/lib/admin-authorization";
+import { authorizePosMutation } from "../src/lib/pos-authorization";
 import type { SessionUser } from "../src/types/radar";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,16 +39,16 @@ test("tax-sensitive responses use explicit private no-store policy", () => {
 });
 
 test("admin tax mutations require authenticated same-origin authorization", () => {
-  for (const file of [
-    "src/app/api/radar/pos/tax-quote/route.ts",
-    "src/app/api/radar/pos/sales/route.ts",
-    "src/app/api/radar/pos/customer-match/route.ts",
-    "src/app/api/radar/pos/sales/[saleReference]/refund/route.ts",
-    "src/app/api/radar/storefront/orders/[orderId]/cancel-refund/route.ts"
-  ]) {
+  for (const [file, authorizationHelper] of [
+    ["src/app/api/radar/pos/tax-quote/route.ts", "authorizePosMutation"],
+    ["src/app/api/radar/pos/sales/route.ts", "authorizePosMutation"],
+    ["src/app/api/radar/pos/customer-match/route.ts", "authorizePosMutation"],
+    ["src/app/api/radar/pos/sales/[saleReference]/refund/route.ts", "authorizePosMutation"],
+    ["src/app/api/radar/storefront/orders/[orderId]/cancel-refund/route.ts", "authorizeAdminMutation"]
+  ] as const) {
     const source = read(file);
     assert.match(source, /requireUser/);
-    assert.match(source, /authorizeAdminMutation/);
+    assert.match(source, new RegExp(authorizationHelper));
   }
 });
 
@@ -157,6 +158,20 @@ test("checkout and POS schemas reject every browser-controlled tax authority fie
     }), admin)?.status,
     403
   );
+  assert.equal(
+    authorizePosMutation(new Request("https://admin.example.test/api/radar/pos/customer-match", {
+      method: "POST",
+      headers: { origin: "https://admin.example.test", "sec-fetch-site": "same-origin" }
+    }), nonAdmin)?.status,
+    403
+  );
+  assert.equal(
+    authorizePosMutation(new Request("https://admin.example.test/api/radar/pos/customer-match", {
+      method: "POST",
+      headers: { origin: "https://attacker.example", "sec-fetch-site": "cross-site" }
+    }), admin)?.status,
+    403
+  );
 });
 
 test("refund schemas reject client tax and customer ownership fields", () => {
@@ -188,7 +203,8 @@ test("POS customer matching is owner-scoped and route cannot trust a customer id
   assert.match(workspace, /o\."userId" = \$\{ownerUserId\}/);
   assert.match(workspace, /s\."userId" = \$\{ownerUserId\}/);
   assert.doesNotMatch(workspace, /phone/);
-  assert.match(route, /resolvePosCustomerMatch\(input, user\.id\)/);
+  assert.match(route, /const storeUser = await resolvePosStoreUser\(user\)/);
+  assert.match(route, /resolvePosCustomerMatch\(input, storeUser\.id\)/);
   assert.match(customerListRoute, /listAdminCustomerRewards\(user\.id,/);
   assert.match(rewardsAdmin, /workspaceCustomerWhereWithLegacy\(prisma, ownerUserId\)/);
   assert.match(sale, /\}, currentUser\.id, tx\)/);

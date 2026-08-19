@@ -347,22 +347,24 @@ test("POS sale request accepts optional customer contact without trusting reward
   assert.equal(invalidEmail.success, false);
 });
 
-test("POS API is private admin-only and delegates to server-side sale creation", () => {
+test("POS API is private POS-authorized and delegates to server-side sale creation", () => {
   const route = readSource("../src/app/api/radar/pos/sales/route.ts");
   const matchRoute = readSource("../src/app/api/radar/pos/customer-match/route.ts");
   assert.match(route, /requireUser/);
-  assert.match(route, /authorizeAdminMutation/);
+  assert.match(route, /authorizePosMutation/);
   assert.match(route, /posSaleCreateSchema\.parse\(await readJson\(request\)\)/);
-  assert.match(route, /createPosSale\(user, \{ \.\.\.input, requestId \}\)/);
+  assert.match(route, /const storeUser = await resolvePosStoreUser\(user\)/);
+  assert.match(route, /createPosSale\(storeUser, \{ \.\.\.input, requestId \}\)/);
   assert.match(matchRoute, /requireUser/);
-  assert.match(matchRoute, /authorizeAdminMutation\(request, user\)/);
+  assert.match(matchRoute, /authorizePosMutation\(request, user\)/);
   assert.match(matchRoute, /withPrivateNoStore/);
   assert.match(matchRoute, /withRequestId/);
   assert.match(matchRoute, /posCustomerMatchSchema\.parse\(await readJson\(request\)\)/);
-  assert.match(matchRoute, /resolvePosCustomerMatch\(input, user\.id\)/);
+  assert.match(matchRoute, /const storeUser = await resolvePosStoreUser\(user\)/);
+  assert.match(matchRoute, /resolvePosCustomerMatch\(input, storeUser\.id\)/);
   assert.match(matchRoute, /privateOk\(\{ match \}\)/);
   assert.doesNotMatch(matchRoute, /passwordHash|tokenHash|sessionToken|rewardBalance|rewardLedger|savedAddresses|address|authenticityNotes|stripePaymentIntent|stripeCheckout/i);
-  assert.doesNotMatch(route, /stripe|checkout|terminal|tapToPay/i);
+  assert.doesNotMatch(route, /stripeClient|checkout\.sessions|terminal|tapToPay/i);
 });
 
 test("POS server revalidates inventory, price, and availability before recording sale", () => {
@@ -757,7 +759,8 @@ test("POS rewards are server-side, separately flagged, and excluded from browser
   assert.match(rewards, /availableDelta: points/);
   assert.match(rewards, /lifetimeEarnedDelta: points/);
   assert.match(rewards, /Manual POS rewards are available immediately after completed sale/);
-  assert.doesNotMatch(route, /rewardPoints|points|customerAccountId|rewardsEligible/i);
+  assert.doesNotMatch(route, /rewardPoints|rewardsEligible/i);
+  assert.match(route, /selectedCustomerAccountId: input\.selectedCustomerAccountId/);
   assert.match(createPosSale, /selectedCustomerAccountId: input\.selectedCustomerAccountId/);
   assert.doesNotMatch(createPosSale, /input\.customerAccountId|input\.rewardsEligible|input\.points/i);
   assert.doesNotMatch(createPosSale, /releasePendingRewardsForOrder|awardRewardsForPaidOrder/i);
@@ -809,14 +812,15 @@ test("Sales detail shows POS metadata and discount details", () => {
   assert.match(saleDetails, /Discount \{money\(rowSale\.discountAmount\)/);
 });
 
-test("POS refund route is admin-only, records manual refunds, and does not call Stripe", () => {
+test("POS refund route requires POS authorization, records manual refunds, and does not call Stripe", () => {
   const route = readSource("../src/app/api/radar/pos/sales/[saleReference]/refund/route.ts");
   const service = readSource("../src/lib/radar-service.ts");
   const rewards = readSource("../src/lib/customer-rewards.ts");
   const refundPosSale = sourceSlice(service, "export async function refundPosSale", "export async function updateInventorySale");
 
   assert.match(route, /requireUser/);
-  assert.match(route, /authorizeAdminMutation\(request, user\)/);
+  assert.match(route, /authorizePosMutation\(request, user\)/);
+  assert.match(route, /resolvePosStoreUser\(user\)/);
   assert.match(route, /posSaleRefundSchema\.parse/);
   assert.match(route, /refundPosSale/);
   assert.match(refundPosSale, /platform:\s*"pos"/);

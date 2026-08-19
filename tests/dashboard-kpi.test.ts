@@ -898,10 +898,11 @@ test("market UI explains TCGplayer prices through TCGCSV and hides manual comp a
   assert.match(app, /Active asking price/);
 });
 
-test("market auto-pricing provider UI and cron are registered", () => {
+test("market auto-pricing provider UI and protected sync route are registered", () => {
   const app = fs.readFileSync(new URL("../src/components/RadarApp.tsx", import.meta.url), "utf8");
   const providers = fs.readFileSync(new URL("../src/lib/market-providers.ts", import.meta.url), "utf8");
   const vercel = fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8");
+  const route = fs.readFileSync(new URL("../src/app/api/radar/inventory/market-sync/cron/route.ts", import.meta.url), "utf8");
 
   const tcgcsv = fs.readFileSync(new URL("../src/lib/tcgcsv-market.ts", import.meta.url), "utf8");
 
@@ -917,7 +918,8 @@ test("market auto-pricing provider UI and cron are registered", () => {
   assert.match(providers, /TCGPLAYER_ACCESS_TOKEN/);
   assert.match(providers, /TCGCSV_ENABLED/);
   assert.match(providers, /EBAY_SOLD/);
-  assert.ok(vercel.includes("/api/radar/inventory/market-sync/cron"));
+  assert.match(route, /cronAuthorized/);
+  assert.doesNotMatch(vercel, /\/api\/radar\/inventory\/market-sync\/cron/);
 });
 
 test("TCGCSV auto-match backfill and review workflow are wired", () => {
@@ -1695,19 +1697,15 @@ test("general alerts remain accessible while retired tracker execution controls 
 
 test("restock monitor schedule and exposed execution routes are removed", () => {
   const vercel = JSON.parse(fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+  const crons = Array.isArray(vercel.crons) ? vercel.crons : [];
   const proxy = fs.readFileSync(new URL("../src/proxy.ts", import.meta.url), "utf8");
   const pkg = fs.readFileSync(new URL("../package.json", import.meta.url), "utf8");
   const env = fs.readFileSync(new URL("../.env.example", import.meta.url), "utf8");
 
-  assert.equal(vercel.crons.some((cron: { path: string }) => cron.path === "/api/radar/monitor/cron"), false);
+  assert.equal(crons.some((cron: { path: string }) => cron.path === "/api/radar/monitor/cron"), false);
   assert.deepEqual(
-    vercel.crons.map((cron: { path: string; schedule: string }) => `${cron.path} ${cron.schedule}`),
-    [
-      "/api/radar/storefront/reservations/expire */5 * * * *",
-      "/api/radar/releases/sync/cron 0 10 * * *",
-      "/api/radar/inventory/market-sync/cron 0 11 * * *",
-      "/api/radar/rewards/audit/cron 30 11 * * *"
-    ]
+    crons.map((cron: { path: string; schedule: string }) => `${cron.path} ${cron.schedule}`),
+    []
   );
   assert.doesNotMatch(proxy, /\/api\/radar\/monitor\/cron/);
   assert.doesNotMatch(pkg, /"monitor":\s*"tsx scripts\/run-monitor\.ts"/);

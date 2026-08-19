@@ -17,8 +17,11 @@ const floridaProfile: PosTaxProfile = {
   countyRateBasisPoints: 50, effectiveAt: new Date("2026-01-01T00:00:00.000Z"), sourceNote: "Owner-approved test snapshot", enabled: true
 };
 
-test("all tax flags are disabled by default and require explicit true", () => {
+test("tax flags use explicit production-safe values", () => {
   assert.deepEqual(taxFeatureConfig({}), {
+    onlineStripeTaxEnabled: false, posSalesTaxEnabled: true, taxExemptSalesEnabled: false, taxReportingEnabled: false
+  });
+  assert.deepEqual(taxFeatureConfig({ POS_SALES_TAX_ENABLED: "false" }), {
     onlineStripeTaxEnabled: false, posSalesTaxEnabled: false, taxExemptSalesEnabled: false, taxReportingEnabled: false
   });
   assert.deepEqual(taxFeatureConfig({ ONLINE_STRIPE_TAX_ENABLED: "TRUE", POS_SALES_TAX_ENABLED: "true", TAX_EXEMPT_SALES_ENABLED: "1", TAX_REPORTING_ENABLED: "false" }), {

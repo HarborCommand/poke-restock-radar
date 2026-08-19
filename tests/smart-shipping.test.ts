@@ -1338,7 +1338,7 @@ test("storefront checkout passes smart shipping options to Stripe instead of a f
   assert.doesNotMatch(sessionCreateParams, /product_data: \{ name: "Shipping" \}/);
   assert.doesNotMatch(createCheckoutSession, /\.\.\.\(shippingCharged > 0/);
 
-  assert.match(client, /Shipping calculated at checkout/);
+  assert.match(client, /Any required taxes are shown before payment/);
   assert.match(client, /Checkout notes/);
   assert.match(client, /Shipping is calculated by ZIP before payment\./);
   assert.match(client, /Items are reserved when checkout starts\./);
