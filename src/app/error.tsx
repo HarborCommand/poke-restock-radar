@@ -40,8 +40,8 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
         <p className="eyeline">System guard</p>
         <h1>Something went wrong</h1>
         <p>
-          The app kept checkout automation disabled and stopped this screen from rendering. Try again, then check System
-          Status if the issue repeats.
+          The storefront could not finish loading. Try again, then contact support or check System Status if the issue
+          repeats.
         </p>
         <button className="primary-action" type="button" onClick={reset}>
           <RefreshCw size={16} />

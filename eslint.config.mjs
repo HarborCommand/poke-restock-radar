@@ -5,7 +5,7 @@ const eslintConfig = [
   ...nextVitals,
   ...nextTypescript,
   {
-    ignores: [".next/**", "node_modules/**", "prisma/dev.db", "next-env.d.ts"]
+    ignores: [".next/**", ".next-*/**", "node_modules/**", "prisma/dev.db", "next-env.d.ts"]
   }
 ];
 

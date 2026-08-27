@@ -213,10 +213,25 @@ const storefrontOrderInclude = {
 type StorefrontInventoryItem = Prisma.InventoryItemGetPayload<{ include: typeof storefrontInventoryInclude }>;
 type StorefrontOrderWithItems = Prisma.StorefrontOrderGetPayload<{ include: typeof storefrontOrderInclude }>;
 type StorefrontOrderItemWithInventory = StorefrontOrderWithItems["items"][number];
+type StorefrontSettingsRecord = Prisma.StorefrontSettingsGetPayload<Prisma.StorefrontSettingsDefaultArgs>;
 type ReservationSessionKey = {
   stripeCheckoutSessionId?: string | null;
   orderId?: string | null;
 };
+
+export function isStorefrontDatabaseUnavailable(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    error instanceof Prisma.PrismaClientInitializationError ||
+    (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P1001") ||
+    /can't reach database server|connect econnrefused|connection timed out|econnreset|enotfound/i.test(message)
+  );
+}
+
+function logStorefrontDatabaseFallback(scope: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("[storefront] database unavailable, rendering public fallback", { scope, message });
+}
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
@@ -438,13 +453,7 @@ export async function releaseExpiredReservations() {
   return cleanupExpiredReservationsForCheckoutOnly();
 }
 
-export async function getStorefrontSettings(
-  userId?: string,
-  client: Prisma.TransactionClient | typeof prisma = prisma
-): Promise<StorefrontSettingsDTO> {
-  const settings = userId
-    ? await client.storefrontSettings.findUnique({ where: { userId } })
-    : await client.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
+function storefrontSettingsToDTO(settings: StorefrontSettingsRecord | null | undefined): StorefrontSettingsDTO {
   const shippingRates = shippingRateProviderConfig();
   const accountFeatures = customerAccountFeatureConfig();
   const taxFeatures = taxFeatureConfig();
@@ -494,31 +503,61 @@ export async function getStorefrontSettings(
   };
 }
 
+export function fallbackStorefrontSettings(): StorefrontSettingsDTO {
+  return storefrontSettingsToDTO(null);
+}
+
+export async function getStorefrontSettings(
+  userId?: string,
+  client: Prisma.TransactionClient | typeof prisma = prisma
+): Promise<StorefrontSettingsDTO> {
+  try {
+    const settings = userId
+      ? await client.storefrontSettings.findUnique({ where: { userId } })
+      : await client.storefrontSettings.findFirst({ orderBy: { updatedAt: "desc" } });
+    return storefrontSettingsToDTO(settings);
+  } catch (error) {
+    if (isStorefrontDatabaseUnavailable(error)) {
+      logStorefrontDatabaseFallback("settings", error);
+      return fallbackStorefrontSettings();
+    }
+    throw error;
+  }
+}
+
 export async function listPublicStoreProducts(input?: { q?: string; category?: string; onlySellable?: boolean; limit?: number }) {
-  const take = input?.limit ? Math.min(STOREFRONT_SHOP_MAX_CANDIDATES, Math.max(1, Math.floor(input.limit))) : undefined;
-  const [products, profileDefinitions] = await Promise.all([
-    prisma.inventoryItem.findMany({
-      where: {
-        publishToStore: true,
-        storeStatus: input?.onlySellable ? "active" : { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] },
-        publicPrice: { not: null },
-        publicSlug: { not: null }
-      },
-      include: storefrontInventoryInclude,
-      orderBy: { updatedAt: "desc" },
-      ...(take ? { take } : {})
-    }),
-    shippingProfileDefinitionsForCheckout()
-  ]);
-  const q = input?.q?.trim().toLowerCase();
-  const category = input?.category?.trim().toLowerCase();
-  return products
-    .filter((item) => !input?.onlySellable || isPublicStorefrontListingSellable(item))
-    .map((item) => publicProductToDTO(item, { profileDefinitions }))
-    .filter((product): product is PublicStoreProductDTO => Boolean(product))
-    .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
-    .filter((product) => !category || category === "all" || product.category.toLowerCase() === category)
-    .sort(compareStorefrontNewestProducts);
+  try {
+    const take = input?.limit ? Math.min(STOREFRONT_SHOP_MAX_CANDIDATES, Math.max(1, Math.floor(input.limit))) : undefined;
+    const [products, profileDefinitions] = await Promise.all([
+      prisma.inventoryItem.findMany({
+        where: {
+          publishToStore: true,
+          storeStatus: input?.onlySellable ? "active" : { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] },
+          publicPrice: { not: null },
+          publicSlug: { not: null }
+        },
+        include: storefrontInventoryInclude,
+        orderBy: { updatedAt: "desc" },
+        ...(take ? { take } : {})
+      }),
+      shippingProfileDefinitionsForCheckout()
+    ]);
+    const q = input?.q?.trim().toLowerCase();
+    const category = input?.category?.trim().toLowerCase();
+    return products
+      .filter((item) => !input?.onlySellable || isPublicStorefrontListingSellable(item))
+      .map((item) => publicProductToDTO(item, { profileDefinitions }))
+      .filter((product): product is PublicStoreProductDTO => Boolean(product))
+      .filter((product) => !q || product.title.toLowerCase().includes(q) || product.tags.some((tag) => tag.toLowerCase().includes(q)))
+      .filter((product) => !category || category === "all" || product.category.toLowerCase() === category)
+      .sort(compareStorefrontNewestProducts);
+  } catch (error) {
+    if (isStorefrontDatabaseUnavailable(error)) {
+      logStorefrontDatabaseFallback("product-list", error);
+      return [];
+    }
+    throw error;
+  }
 }
 
 type PublicStoreProductSearchInput = {
@@ -586,103 +625,140 @@ function storefrontMatchesShopAvailability(product: PublicStoreProductDTO, avail
 
 export async function searchPublicStoreProducts(input: PublicStoreProductSearchInput = {}) {
   const applied = storefrontShopSearchParams(input);
-  const [items, profileDefinitions] = await Promise.all([
-    prisma.inventoryItem.findMany({
-      where: {
-        publishToStore: true,
-        storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] },
-        publicPrice: { not: null },
-        publicSlug: { not: null }
-      },
-      include: storefrontInventoryInclude,
-      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { itemName: "asc" }],
-      take: STOREFRONT_SHOP_MAX_CANDIDATES
-    }),
-    shippingProfileDefinitionsForCheckout()
-  ]);
-  const products = items
-    .map((item) => publicProductToDTO(item, { profileDefinitions }))
-    .filter((product): product is PublicStoreProductDTO => Boolean(product));
-  const categories = Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((left, right) => left.localeCompare(right));
-  const sets = Array.from(new Set(products.map((product) => product.setName).filter((setName): setName is string => Boolean(setName)))).sort((left, right) => left.localeCompare(right));
-  const category = categories.includes(applied.category) ? applied.category : "";
-  const set = sets.includes(applied.set) ? applied.set : "";
-  const q = applied.q.toLowerCase();
-  const filtered = products
-    .filter((product) => !q || publicProductSearchText(product).includes(q))
-    .filter((product) => !category || product.category === category)
-    .filter((product) => !set || product.setName === set)
-    .filter((product) => storefrontMatchesShopAvailability(product, applied.availability));
-  const sorted = sortPublicProductsForShop(filtered, applied.sort);
-  const start = (applied.page - 1) * applied.pageSize;
-  const pageProducts = sorted.slice(start, start + applied.pageSize);
+  try {
+    const [items, profileDefinitions] = await Promise.all([
+      prisma.inventoryItem.findMany({
+        where: {
+          publishToStore: true,
+          storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] },
+          publicPrice: { not: null },
+          publicSlug: { not: null }
+        },
+        include: storefrontInventoryInclude,
+        orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { itemName: "asc" }],
+        take: STOREFRONT_SHOP_MAX_CANDIDATES
+      }),
+      shippingProfileDefinitionsForCheckout()
+    ]);
+    const products = items
+      .map((item) => publicProductToDTO(item, { profileDefinitions }))
+      .filter((product): product is PublicStoreProductDTO => Boolean(product));
+    const categories = Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort((left, right) => left.localeCompare(right));
+    const sets = Array.from(new Set(products.map((product) => product.setName).filter((setName): setName is string => Boolean(setName)))).sort((left, right) => left.localeCompare(right));
+    const category = categories.includes(applied.category) ? applied.category : "";
+    const set = sets.includes(applied.set) ? applied.set : "";
+    const q = applied.q.toLowerCase();
+    const filtered = products
+      .filter((product) => !q || publicProductSearchText(product).includes(q))
+      .filter((product) => !category || product.category === category)
+      .filter((product) => !set || product.setName === set)
+      .filter((product) => storefrontMatchesShopAvailability(product, applied.availability));
+    const sorted = sortPublicProductsForShop(filtered, applied.sort);
+    const start = (applied.page - 1) * applied.pageSize;
+    const pageProducts = sorted.slice(start, start + applied.pageSize);
 
-  return {
-    products: pageProducts,
-    total: sorted.length,
-    page: applied.page,
-    pageSize: applied.pageSize,
-    hasMore: start + pageProducts.length < sorted.length,
-    categories,
-    sets,
-    applied: {
-      ...applied,
-      category,
-      set
+    return {
+      products: pageProducts,
+      total: sorted.length,
+      page: applied.page,
+      pageSize: applied.pageSize,
+      hasMore: start + pageProducts.length < sorted.length,
+      categories,
+      sets,
+      applied: {
+        ...applied,
+        category,
+        set
+      }
+    };
+  } catch (error) {
+    if (isStorefrontDatabaseUnavailable(error)) {
+      logStorefrontDatabaseFallback("product-search", error);
+      return {
+        products: [],
+        total: 0,
+        page: applied.page,
+        pageSize: applied.pageSize,
+        hasMore: false,
+        categories: [],
+        sets: [],
+        applied: {
+          ...applied,
+          category: "",
+          set: ""
+        }
+      };
     }
-  };
+    throw error;
+  }
 }
 
 export async function getPublicStoreProduct(slug: string) {
-  const normalizedSlug = normalizeStorefrontSlug(slug);
-  const exactSlugCandidates = Array.from(new Set([slug, normalizedSlug].filter(Boolean)));
-  const [exactItem, profileDefinitions] = await Promise.all([
-    prisma.inventoryItem.findFirst({
-      where: { publicSlug: { in: exactSlugCandidates }, publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] } },
-      include: storefrontInventoryInclude
-    }),
-    shippingProfileDefinitionsForCheckout()
-  ]);
-  let item = exactItem;
-  if (!item) {
-    const candidates = await prisma.inventoryItem.findMany({
-      where: { publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] }, publicSlug: { not: null } },
-      include: storefrontInventoryInclude,
-      take: 500
-    });
-    const normalizedMatches = candidates.filter((candidate) => normalizeStorefrontSlug(candidate.publicSlug, `product-${candidate.id.slice(-6)}`) === normalizedSlug);
-    item = normalizedMatches.length === 1 ? normalizedMatches[0] : null;
+  try {
+    const normalizedSlug = normalizeStorefrontSlug(slug);
+    const exactSlugCandidates = Array.from(new Set([slug, normalizedSlug].filter(Boolean)));
+    const [exactItem, profileDefinitions] = await Promise.all([
+      prisma.inventoryItem.findFirst({
+        where: { publicSlug: { in: exactSlugCandidates }, publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] } },
+        include: storefrontInventoryInclude
+      }),
+      shippingProfileDefinitionsForCheckout()
+    ]);
+    let item = exactItem;
+    if (!item) {
+      const candidates = await prisma.inventoryItem.findMany({
+        where: { publishToStore: true, storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] }, publicSlug: { not: null } },
+        include: storefrontInventoryInclude,
+        take: 500
+      });
+      const normalizedMatches = candidates.filter((candidate) => normalizeStorefrontSlug(candidate.publicSlug, `product-${candidate.id.slice(-6)}`) === normalizedSlug);
+      item = normalizedMatches.length === 1 ? normalizedMatches[0] : null;
+    }
+    if (!item) return null;
+    return publicProductToDTO(item, { profileDefinitions });
+  } catch (error) {
+    if (isStorefrontDatabaseUnavailable(error)) {
+      logStorefrontDatabaseFallback("product-detail", error);
+      return null;
+    }
+    throw error;
   }
-  if (!item) return null;
-  return publicProductToDTO(item, { profileDefinitions });
 }
 
 export async function getRelatedPublicStoreProducts(product: PublicStoreProductDTO, limit = 4) {
-  const take = Math.min(80, Math.max(limit * 16, 24));
-  const [items, profileDefinitions] = await Promise.all([
-    prisma.inventoryItem.findMany({
-      where: {
-        id: { not: product.id },
-        publishToStore: true,
-        storeStatus: "active",
-        publicPrice: { not: null },
-        publicSlug: { not: null }
-      },
-      include: storefrontInventoryInclude,
-      orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }, { id: "asc" }],
-      take
-    }),
-    shippingProfileDefinitionsForCheckout()
-  ]);
-  const sellableProducts = items
-    .filter((item) => isPublicStorefrontListingSellable(item))
-    .map((item) => publicProductToDTO(item, { profileDefinitions }))
-    .filter((entry): entry is PublicStoreProductDTO => Boolean(entry))
-    .filter(isSellableStorefrontProduct);
+  try {
+    const take = Math.min(80, Math.max(limit * 16, 24));
+    const [items, profileDefinitions] = await Promise.all([
+      prisma.inventoryItem.findMany({
+        where: {
+          id: { not: product.id },
+          publishToStore: true,
+          storeStatus: "active",
+          publicPrice: { not: null },
+          publicSlug: { not: null }
+        },
+        include: storefrontInventoryInclude,
+        orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }, { id: "asc" }],
+        take
+      }),
+      shippingProfileDefinitionsForCheckout()
+    ]);
+    const sellableProducts = items
+      .filter((item) => isPublicStorefrontListingSellable(item))
+      .map((item) => publicProductToDTO(item, { profileDefinitions }))
+      .filter((entry): entry is PublicStoreProductDTO => Boolean(entry))
+      .filter(isSellableStorefrontProduct);
 
-  return uniqueStorefrontProducts(sellableProducts)
-    .sort(compareRelatedStorefrontProducts(product))
-    .slice(0, limit);
+    return uniqueStorefrontProducts(sellableProducts)
+      .sort(compareRelatedStorefrontProducts(product))
+      .slice(0, limit);
+  } catch (error) {
+    if (isStorefrontDatabaseUnavailable(error)) {
+      logStorefrontDatabaseFallback("related-products", error);
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function getCartProducts(
