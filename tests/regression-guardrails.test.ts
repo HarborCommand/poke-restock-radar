@@ -185,11 +185,16 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(flow, /setMode\("customer"\)/);
   assert.match(flow, /hasActiveSquarePending/);
   assert.match(flow, /url\.searchParams\.has\("data"\)/);
+  assert.match(flow, /elementIsCheckoutVisible/);
+  assert.match(flow, /aria-label="Pinned checkout action"/);
+  assert.match(flow, /aria-label="Pinned complete sale action"/);
+  assert.match(flow, /completeButtonIsDisabled/);
   assert.match(flowCss, /data-pos-square-flow-mode="sale"[\s\S]*\.pos-cart-lines[\s\S]*overflow-y: auto !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="sale"[\s\S]*\.pos-payment-panel[\s\S]*display: none !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="payment"[\s\S]*\.pos-payment-panel[\s\S]*display: block !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="payment"[\s\S]*\.pos-complete-button[\s\S]*position: sticky !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="customer"[\s\S]*\.pos-customer-panel[\s\S]*display: block !important/);
+  assert.match(flowCss, /\.floatingActionDock[\s\S]*position: fixed/);
 });
 
 test("core safety regression suites remain part of the default test command", () => {

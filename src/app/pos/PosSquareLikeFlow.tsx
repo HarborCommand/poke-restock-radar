@@ -2,7 +2,7 @@
 
 import { Check, ChevronLeft, CreditCard, UserRound } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import feedbackStyles from "./PosCustomerAttachFeedback.module.css";
 import styles from "./PosSquareLikeFlow.module.css";
 
@@ -51,14 +51,67 @@ function hasActiveSquarePending() {
   }
 }
 
+function compactButtonText(value: string | null | undefined) {
+  return String(value || "Complete Sale").replace(/\s+/g, " ").trim() || "Complete Sale";
+}
+
+function completeButtonIsDisabled(button: HTMLButtonElement | null) {
+  if (!button) return true;
+  return (
+    button.disabled ||
+    button.classList.contains("inactive") ||
+    button.getAttribute("aria-disabled") === "true" ||
+    button.getAttribute("data-cash-disabled") === "true" ||
+    button.getAttribute("data-square-disabled") === "true"
+  );
+}
+
+function visibleViewportBounds() {
+  const viewport = window.visualViewport;
+  const top = viewport?.offsetTop ?? 0;
+  const left = viewport?.offsetLeft ?? 0;
+  const height = viewport?.height ?? window.innerHeight;
+  const width = viewport?.width ?? window.innerWidth;
+  return {
+    top,
+    left,
+    right: left + width,
+    bottom: top + height
+  };
+}
+
+function elementIsCheckoutVisible(element: HTMLElement | null) {
+  if (!element || !element.isConnected) return false;
+  const computed = window.getComputedStyle(element);
+  if (computed.display === "none" || computed.visibility === "hidden" || Number(computed.opacity) <= 0.01) return false;
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return false;
+
+  const viewport = visibleViewportBounds();
+  const visibleHeight = Math.max(0, Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top));
+  const visibleWidth = Math.max(0, Math.min(rect.right, viewport.right) - Math.max(rect.left, viewport.left));
+  return visibleHeight >= Math.min(rect.height, 44) && visibleWidth >= Math.min(rect.width, 160);
+}
+
 export function PosSquareLikeFlow() {
   const [mode, setMode] = useState<FlowMode>("sale");
   const [cartPanel, setCartPanel] = useState<HTMLElement | null>(null);
   const [cartHeader, setCartHeader] = useState<HTMLElement | null>(null);
+  const [saleAction, setSaleAction] = useState<HTMLElement | null>(null);
+  const [saleActionVisible, setSaleActionVisible] = useState(true);
+  const [completeButton, setCompleteButton] = useState<HTMLButtonElement | null>(null);
+  const [completeButtonLabel, setCompleteButtonLabel] = useState("Complete Sale");
+  const [completeButtonDisabled, setCompleteButtonDisabled] = useState(true);
+  const [completeButtonVisible, setCompleteButtonVisible] = useState(true);
   const [cartCount, setCartCount] = useState(0);
   const [totalCents, setTotalCents] = useState(0);
   const [attachedCustomerName, setAttachedCustomerName] = useState<string | null>(null);
   const [customerToast, setCustomerToast] = useState<string | null>(null);
+
+  const setSaleActionNode = useCallback((node: HTMLDivElement | null) => {
+    setSaleAction((current) => (current === node ? current : node));
+  }, []);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -75,9 +128,15 @@ export function PosSquareLikeFlow() {
       const nextCount = currentCartCount();
       const nextTotal = currentTotalCents();
       const nextCustomerName = currentAttachedCustomerName(nextPanel);
+      const nextCompleteButton = document.querySelector<HTMLButtonElement>(".pos-complete-button");
+      const nextCompleteLabel = compactButtonText(nextCompleteButton?.textContent);
+      const nextCompleteDisabled = completeButtonIsDisabled(nextCompleteButton);
 
       setCartPanel((current) => (current === nextPanel ? current : nextPanel));
       setCartHeader((current) => (current === nextHeader ? current : nextHeader));
+      setCompleteButton((current) => (current === nextCompleteButton ? current : nextCompleteButton));
+      setCompleteButtonLabel((current) => (current === nextCompleteLabel ? current : nextCompleteLabel));
+      setCompleteButtonDisabled((current) => (current === nextCompleteDisabled ? current : nextCompleteDisabled));
       setCartCount((current) => (current === nextCount ? current : nextCount));
       setTotalCents((current) => (current === nextTotal ? current : nextTotal));
       setAttachedCustomerName((current) => (current === nextCustomerName ? current : nextCustomerName));
@@ -103,7 +162,7 @@ export function PosSquareLikeFlow() {
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["class", "disabled", "aria-busy", "value"]
+      attributeFilter: ["class", "disabled", "aria-busy", "aria-disabled", "data-cash-disabled", "data-square-disabled", "value"]
     });
     document.addEventListener("input", schedule, true);
     document.addEventListener("change", schedule, true);
@@ -150,6 +209,44 @@ export function PosSquareLikeFlow() {
       cartPanel.removeAttribute("aria-label");
     };
   }, [cartPanel, mode]);
+
+  useEffect(() => {
+    let frame = 0;
+
+    const syncVisibility = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const nextSaleVisible = mode !== "sale" || elementIsCheckoutVisible(saleAction);
+        const nextCompleteVisible = mode !== "payment" || elementIsCheckoutVisible(completeButton);
+        setSaleActionVisible((current) => (current === nextSaleVisible ? current : nextSaleVisible));
+        setCompleteButtonVisible((current) => (current === nextCompleteVisible ? current : nextCompleteVisible));
+      });
+    };
+
+    syncVisibility();
+    const observer = new MutationObserver(syncVisibility);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "disabled", "aria-hidden", "aria-disabled", "data-cash-disabled", "data-square-disabled", "style"]
+    });
+    document.addEventListener("scroll", syncVisibility, true);
+    window.addEventListener("resize", syncVisibility, { passive: true });
+    window.addEventListener("orientationchange", syncVisibility, { passive: true });
+    window.visualViewport?.addEventListener("resize", syncVisibility, { passive: true });
+    window.visualViewport?.addEventListener("scroll", syncVisibility, { passive: true });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      document.removeEventListener("scroll", syncVisibility, true);
+      window.removeEventListener("resize", syncVisibility);
+      window.removeEventListener("orientationchange", syncVisibility);
+      window.visualViewport?.removeEventListener("resize", syncVisibility);
+      window.visualViewport?.removeEventListener("scroll", syncVisibility);
+    };
+  }, [completeButton, mode, saleAction]);
 
   useEffect(() => {
     if (!cartPanel || mode !== "customer") return;
@@ -220,10 +317,21 @@ export function PosSquareLikeFlow() {
     setMode("sale");
   };
 
+  const completeVisibleSale = () => {
+    const button = completeButton ?? document.querySelector<HTMLButtonElement>(".pos-complete-button");
+    if (!button || completeButtonIsDisabled(button)) {
+      button?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      return;
+    }
+    button.click();
+  };
+
   if (!cartPanel) return null;
 
   const chargeDisabled = cartCount <= 0 || totalCents <= 0;
   const customerAttached = Boolean(attachedCustomerName);
+  const showPinnedCharge = mode === "sale" && cartCount > 0 && !saleActionVisible;
+  const showPinnedComplete = mode === "payment" && cartCount > 0 && !completeButtonVisible;
 
   return (
     <>
@@ -268,10 +376,48 @@ export function PosSquareLikeFlow() {
           )
         : null}
 
+      {showPinnedCharge
+        ? createPortal(
+            <div className={styles.floatingActionDock} aria-label="Pinned checkout action">
+              <div className={styles.floatingSummary}>
+                <span>{cartCount === 1 ? "1 item" : `${cartCount} items`}</span>
+                <strong>{moneyFromCents(totalCents)}</strong>
+              </div>
+              <button
+                className={styles.floatingChargeButton}
+                type="button"
+                disabled={chargeDisabled}
+                onClick={() => setMode("payment")}
+              >
+                <CreditCard size={19} aria-hidden="true" />
+                <span>Charge {moneyFromCents(totalCents)}</span>
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {showPinnedComplete
+        ? createPortal(
+            <div className={styles.floatingActionDock} aria-label="Pinned complete sale action">
+              <button
+                className={`${styles.floatingChargeButton} ${styles.floatingCompleteButton}`}
+                type="button"
+                disabled={completeButtonDisabled}
+                onClick={completeVisibleSale}
+              >
+                <Check size={19} aria-hidden="true" />
+                <span>{completeButtonLabel}</span>
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
+
       {createPortal(
         <>
           {mode === "sale" ? (
-            <div className={styles.chargeBar} aria-label="Checkout action">
+            <div ref={setSaleActionNode} className={styles.chargeBar} aria-label="Checkout action">
               <div className={styles.saleSummary}>
                 <span>{cartCount === 1 ? "1 item" : `${cartCount} items`}</span>
                 <strong>{moneyFromCents(totalCents)}</strong>
