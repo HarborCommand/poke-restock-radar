@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { getAppHealth, publicHealthFromAppHealth } from "@/lib/health";
 import { privateOk, safeMutationError, withRequestId } from "@/lib/http";
 import { logServerEvent, observabilitySnapshot, requestCorrelationId } from "@/lib/observability";
+import { storefrontDataDiagnostics } from "@/lib/storefront";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,13 +21,14 @@ export async function GET(request: Request) {
   if (adminResponse) return withRequestId(adminResponse, requestId);
 
   try {
-    const [health, auditRows] = await Promise.all([
+    const [health, auditRows, storefront] = await Promise.all([
       getAppHealth(user),
       prisma.auditLog.findMany({
         orderBy: { createdAt: "desc" },
         take: 50,
         select: { action: true, entityType: true, createdAt: true }
-      })
+      }),
+      storefrontDataDiagnostics()
     ]);
     const auditCounts = auditRows.reduce<Record<string, number>>((result, row) => {
       const action = safeAction(row.action);
@@ -40,6 +42,7 @@ export async function GET(request: Request) {
           commit: health.build.commitShort,
           environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "unknown"
         },
+        storefront,
         events: observabilitySnapshot(25),
         audit: {
           counts: auditCounts,

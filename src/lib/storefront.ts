@@ -307,6 +307,60 @@ type PublicStorefrontListingVisibilityInput = StorefrontQuantityInput & {
 
 export const PUBLIC_STOREFRONT_VISIBLE_STATUSES = ["active", "sold_out"] as const;
 
+type PreviewQaStorefrontListingInput = {
+  itemName?: string | null;
+  publicTitle?: string | null;
+  publicDescription?: string | null;
+  description?: string | null;
+  setName?: string | null;
+  brand?: string | null;
+  manufacturer?: string | null;
+  sku?: string | null;
+  upc?: string | null;
+  storefrontTags?: string | null;
+};
+
+function isProductionStorefrontRuntime(env: Record<string, string | undefined> = process.env) {
+  return env.VERCEL_ENV === "production" || (env.NODE_ENV === "production" && env.VERCEL_ENV !== "preview");
+}
+
+export function isPreviewQaStorefrontListing(item: PreviewQaStorefrontListingInput) {
+  const tags = parseList(item.storefrontTags).map((tag) => tag.toLowerCase());
+  const title = `${item.publicTitle ?? ""} ${item.itemName ?? ""}`.toLowerCase();
+  const descriptor = [
+    item.publicDescription,
+    item.description,
+    item.setName,
+    item.brand,
+    item.manufacturer,
+    item.sku,
+    item.upc
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return Boolean(
+    tags.includes("preview") ||
+      tags.includes("qa") ||
+      tags.includes("stripe-test") ||
+      /^preview[-_\s]/i.test(item.sku ?? "") ||
+      /preview\s+(stripe|webhook|qa)/i.test(title) ||
+      /stripe\s+webhook\s+test/i.test(title) ||
+      /preview\s+qa\s+set/i.test(descriptor) ||
+      /gamedaygrabs\s+preview/i.test(descriptor) ||
+      /preview\s+qa/i.test(descriptor) ||
+      item.upc === "000000000001"
+  );
+}
+
+export function shouldHidePreviewListingFromPublicProduction(
+  item: PreviewQaStorefrontListingInput,
+  env: Record<string, string | undefined> = process.env
+) {
+  return isProductionStorefrontRuntime(env) && isPreviewQaStorefrontListing(item);
+}
+
 function quantityOwned(item: StorefrontQuantityInput) {
   const lotRemaining = item.stockLots.reduce((sum, lot) => sum + lot.remainingQuantity, 0);
   return item.stockLots.length ? lotRemaining : Math.max(0, item.quantity - quantitySold(item));
@@ -372,6 +426,7 @@ export function publicProductToDTO(
   const rawAvailableQuantity = sellableQuantity(item);
   const storedSlug = item.publicSlug;
   if (!isPublicStorefrontListingVisible(item)) return null;
+  if (shouldHidePreviewListingFromPublicProduction(item)) return null;
   if (!storedSlug || price === null || price === undefined) return null;
   const slug = normalizeStorefrontSlug(storedSlug, `product-${item.id.slice(-6)}`);
   const images = publicImages(item);
@@ -723,6 +778,34 @@ export async function getPublicStoreProduct(slug: string) {
     }
     throw error;
   }
+}
+
+export async function storefrontDataDiagnostics() {
+  const items = await prisma.inventoryItem.findMany({
+    where: {
+      publishToStore: true,
+      storeStatus: { in: [...PUBLIC_STOREFRONT_VISIBLE_STATUSES] },
+      publicPrice: { not: null },
+      publicSlug: { not: null }
+    },
+    include: storefrontInventoryInclude,
+    orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+    take: STOREFRONT_SHOP_MAX_CANDIDATES
+  });
+  const previewQaItems = items.filter(isPreviewQaStorefrontListing);
+  const publicProducts = items
+    .map((item) => publicProductToDTO(item))
+    .filter((product): product is PublicStoreProductDTO => Boolean(product));
+  const productsWithImages = publicProducts.filter((product) => product.images.length > 0);
+
+  return {
+    candidateCount: items.length,
+    visibleProductCount: publicProducts.length,
+    previewQaCandidateCount: previewQaItems.length,
+    visibleProductsWithImages: productsWithImages.length,
+    visibleProductsMissingImages: Math.max(0, publicProducts.length - productsWithImages.length),
+    productionPreviewQaBlocked: isProductionStorefrontRuntime() && previewQaItems.length > 0
+  };
 }
 
 export async function getRelatedPublicStoreProducts(product: PublicStoreProductDTO, limit = 4) {

@@ -72,19 +72,29 @@ export function orderedProductGalleryImages(images: ProductImageCandidate[] | nu
 }
 
 export function getSavedProductImageUrls(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
-  const hasGalleryRows = Boolean(product.productImages?.length);
   const galleryImages = orderedProductGalleryImages(product.productImages, options).map((image) => image.url ?? null);
-  if (hasGalleryRows) return uniqueProductImageUrls(galleryImages);
-  return uniqueProductImageUrls([
-    ...galleryImages,
+  const validGalleryImages = uniqueProductImageUrls(galleryImages);
+  if (validGalleryImages.length > 0) return validGalleryImages;
+  const hiddenGalleryUrls = options.publicOnly
+    ? uniqueProductImageUrls((product.productImages ?? []).filter((image) => image.showInStore === false).map((image) => image.url))
+    : [];
+  const legacyImages = uniqueProductImageUrls([
     product.imageUrl,
     ...parseProductImageList(product.publicImages)
+  ]);
+  const visibleLegacyImages = hiddenGalleryUrls.length
+    ? legacyImages.filter((url) => !hiddenGalleryUrls.includes(url))
+    : legacyImages;
+  return uniqueProductImageUrls([
+    ...validGalleryImages,
+    ...visibleLegacyImages
   ]);
 }
 
 export function getProductImageUrls(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {
+  const galleryImages = uniqueProductImageUrls(orderedProductGalleryImages(product.productImages, options).map((image) => image.url ?? null));
   const savedImageUrls = getSavedProductImageUrls(product, options);
-  if (product.productImages?.length) return savedImageUrls;
+  if (galleryImages.length > 0) return savedImageUrls;
   return uniqueProductImageUrls([
     ...savedImageUrls,
     product.liveImageUrl,

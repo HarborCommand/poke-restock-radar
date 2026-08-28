@@ -3,7 +3,13 @@ import fs from "node:fs";
 import test from "node:test";
 
 import { syncedProductImageFields } from "../src/lib/product-images";
-import { isPublicStorefrontListingSellable, isPublicStorefrontListingVisible, publicProductToDTO } from "../src/lib/storefront";
+import {
+  isPreviewQaStorefrontListing,
+  isPublicStorefrontListingSellable,
+  isPublicStorefrontListingVisible,
+  publicProductToDTO,
+  shouldHidePreviewListingFromPublicProduction
+} from "../src/lib/storefront";
 import { storefrontProductFeedXml } from "../src/lib/storefront-product-feed";
 
 const storefrontClient = fs.readFileSync(new URL("../src/components/StorefrontClient.tsx", import.meta.url), "utf8");
@@ -127,6 +133,69 @@ test("storefront DTO uses saved gallery images as the public image source of tru
   assert.deepEqual(dto.images, [
     "https://abc.public.blob.vercel-storage.com/clean-uploaded-product.webp"
   ]);
+});
+
+test("storefront DTO falls back to legacy imageUrl when gallery rows have no public image", () => {
+  const legacyUrl = "https://cdn.example.com/legacy-restored-product.webp";
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: legacyUrl,
+      publicImages: null,
+      productImages: [
+        {
+          url: "https://cdn.example.com/internal-hidden-gallery.webp",
+          isPrimary: true,
+          sortOrder: 0,
+          showInStore: false,
+          createdAt: new Date("2026-06-01T00:00:00.000Z")
+        }
+      ]
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, legacyUrl);
+  assert.deepEqual(dto.images, [legacyUrl]);
+});
+
+test("storefront DTO keeps hidden gallery URLs from reappearing through legacy imageUrl", () => {
+  const hiddenUrl = "https://cdn.example.com/hidden-deleted-gallery.webp";
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: hiddenUrl,
+      publicImages: JSON.stringify([hiddenUrl]),
+      productImages: [
+        {
+          url: hiddenUrl,
+          isPrimary: true,
+          sortOrder: 0,
+          showInStore: false,
+          createdAt: new Date("2026-06-01T00:00:00.000Z")
+        }
+      ]
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, null);
+  assert.deepEqual(dto.images, []);
+});
+
+test("preview QA storefront listings are blocked from public production output", () => {
+  const previewItem = storefrontItem({
+    itemName: "Preview Stripe Webhook Test Booster Box",
+    publicTitle: "Preview Stripe Webhook Test Booster Box",
+    setName: "Preview QA Set",
+    brand: "GameDayGrabs Preview",
+    manufacturer: "Preview QA",
+    sku: "PREVIEW-WEBHOOK-TEST-001",
+    upc: "000000000001",
+    storefrontTags: JSON.stringify(["preview", "qa", "stripe-test"])
+  });
+
+  assert.equal(isPreviewQaStorefrontListing(previewItem), true);
+  assert.equal(shouldHidePreviewListingFromPublicProduction(previewItem, { VERCEL_ENV: "production" }), true);
+  assert.equal(shouldHidePreviewListingFromPublicProduction(previewItem, { VERCEL_ENV: "preview" }), false);
 });
 
 test("storefront DTO uses clean image candidates instead of low-resolution or promo-marked images", () => {
