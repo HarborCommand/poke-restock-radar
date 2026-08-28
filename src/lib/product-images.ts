@@ -95,13 +95,19 @@ export function getProductImageUrls(product: ProductImageResolverInput, options:
   const galleryImages = uniqueProductImageUrls(orderedProductGalleryImages(product.productImages, options).map((image) => image.url ?? null));
   const savedImageUrls = getSavedProductImageUrls(product, options);
   if (galleryImages.length > 0) return savedImageUrls;
-  return uniqueProductImageUrls([
+  const hiddenGalleryUrls = options.publicOnly
+    ? uniqueProductImageUrls((product.productImages ?? []).filter((image) => image.showInStore === false).map((image) => image.url))
+    : [];
+  const fallbackImages = uniqueProductImageUrls([
     ...savedImageUrls,
     product.liveImageUrl,
     product.retailerImageUrl,
     product.product?.liveImageUrl,
     product.product?.imageUrl
   ]);
+  return hiddenGalleryUrls.length
+    ? fallbackImages.filter((url) => !hiddenGalleryUrls.includes(url))
+    : fallbackImages;
 }
 
 export function getPrimaryProductImage(product: ProductImageResolverInput, options: ProductImageResolverOptions = {}) {

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { displayStorefrontCategory } from "@/lib/storefront-categories";
 import { cleanStorefrontDescription, cleanStorefrontTitle } from "@/lib/storefront-copy";
 import { isStorefrontDisplayImageUrl } from "@/lib/product-image-quality";
-import { getSavedProductImageUrls } from "@/lib/product-images";
+import { getProductImageUrls, getSavedProductImageUrls } from "@/lib/product-images";
 import { emailProviderConfigured, sendEmailViaProvider, type EmailMessage, type EmailSendOptions } from "@/lib/email-provider";
 import {
   calculateCartShipping,
@@ -415,7 +415,7 @@ function publicMaxQuantityForItem(item: StorefrontInventoryItem, quantity: numbe
 }
 
 function publicImages(item: StorefrontInventoryItem) {
-  return getSavedProductImageUrls(item, { publicOnly: true }).filter(isStorefrontDisplayImageUrl);
+  return getProductImageUrls(item, { publicOnly: true }).filter(isStorefrontDisplayImageUrl);
 }
 
 export function publicProductToDTO(

@@ -52,8 +52,7 @@ function hasKnownFallbackSourceMarker(value: string) {
       host.includes("pricecharting.com") ||
       host.endsWith("spellenrijk.nl") ||
       host.endsWith("cdnmp.net") ||
-      host.endsWith("rollntrade.com") ||
-      host.endsWith("target.scene7.com")
+      host.endsWith("rollntrade.com")
     );
   } catch {
     return false;

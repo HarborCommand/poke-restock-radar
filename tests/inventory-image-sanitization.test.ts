@@ -39,11 +39,14 @@ function sourceSlice(source: string, startNeedle: string, endNeedle?: string) {
 
 test("inventory image URLs keep normal hosted URLs and public paths", () => {
   const hosted = sanitizePublicImageUrl(" https://example.com/product.png ");
+  const webp = sanitizePublicImageUrl("https://example.com/product.webp");
   const relative = sanitizePublicImageUrl("/brand/gamedaygrabs-icon.png");
 
   assert.equal(hosted.value, "https://example.com/product.png");
+  assert.equal(webp.value, "https://example.com/product.webp");
   assert.equal(relative.value, "/brand/gamedaygrabs-icon.png");
   assert.equal(hosted.warning, undefined);
+  assert.equal(webp.warning, undefined);
   assert.equal(relative.warning, undefined);
 });
 
@@ -97,13 +100,13 @@ test("storefront public images strip raw data but keep valid image URLs", () => 
     publishToStore: true,
     publicTitle: "Pokemon Test Booster Bundle",
     publicPrice: 25,
-    publicImages: ["data:image/png;base64,AAA", "https://example.com/public-product.png"],
+    publicImages: ["data:image/png;base64,AAA", "https://example.com/public-product.webp"],
     availableForSale: 1,
     storeStatus: "active"
   });
 
   const parsed = inventoryStoreListingSchema.parse(payload);
-  assert.deepEqual(parsed.publicImages, ["https://example.com/public-product.png"]);
+  assert.deepEqual(parsed.publicImages, ["https://example.com/public-product.webp"]);
   assert.equal(warnings[0]?.field, "publicImages");
 });
 
@@ -171,6 +174,8 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(uploadRoute, /BLOB_READ_WRITE_TOKEN/);
   assert.match(uploadRoute, /@vercel\/blob/);
   assert.match(uploadRoute, /image\/jpeg/);
+  assert.match(uploadRoute, /image\/webp/);
+  assert.match(uploadRoute, /contentType === "image\/webp" \? "webp"/);
   assert.doesNotMatch(uploadRoute, /image\/gif/);
   assert.match(resolveRoute, /extractPublicImageUrlFromHtml/);
   assert.match(attachRoute, /attachInventoryProductImage/);
@@ -196,6 +201,8 @@ test("product image gallery model and API routes are wired", () => {
   assert.match(appSource, /Set primary/);
   assert.match(appSource, /images\/resolve-url/);
   assert.match(appSource, /Product Image Uploads/);
+  assert.match(appSource, /accept="image\/jpeg,image\/png,image\/webp"/);
+  assert.match(appSource, /WebP files are accepted/);
 });
 
 test("listing image manager keeps public image controls readable", () => {

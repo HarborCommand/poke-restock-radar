@@ -158,6 +158,31 @@ test("storefront DTO falls back to legacy imageUrl when gallery rows have no pub
   assert.deepEqual(dto.images, [legacyUrl]);
 });
 
+test("storefront DTO falls back to linked inventory product image when saved images are missing", () => {
+  const linkedProductImage = "https://target.scene7.com/is/image/Target/GUEST_first-partner-series-3?wid=800&hei=800&qlt=80&fmt=webp";
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: null,
+      publicImages: null,
+      productImages: [],
+      product: {
+        liveImageUrl: linkedProductImage,
+        imageUrl: null,
+        url: "https://example.com/products/first-partner-illustration-collection-series-3",
+        verifiedFinalUrl: null,
+        sku: null,
+        upc: null,
+        dpci: null,
+        retailerProductId: null
+      }
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, linkedProductImage);
+  assert.deepEqual(dto.images, [linkedProductImage]);
+});
+
 test("storefront DTO keeps hidden gallery URLs from reappearing through legacy imageUrl", () => {
   const hiddenUrl = "https://cdn.example.com/hidden-deleted-gallery.webp";
   const dto = publicProductToDTO(
@@ -173,6 +198,39 @@ test("storefront DTO keeps hidden gallery URLs from reappearing through legacy i
           createdAt: new Date("2026-06-01T00:00:00.000Z")
         }
       ]
+    })
+  );
+
+  assert.ok(dto);
+  assert.equal(dto.primaryImageUrl, null);
+  assert.deepEqual(dto.images, []);
+});
+
+test("storefront DTO keeps hidden gallery URLs from reappearing through linked product images", () => {
+  const hiddenUrl = "https://cdn.example.com/hidden-linked-product-image.webp";
+  const dto = publicProductToDTO(
+    storefrontItem({
+      imageUrl: null,
+      publicImages: null,
+      productImages: [
+        {
+          url: hiddenUrl,
+          isPrimary: true,
+          sortOrder: 0,
+          showInStore: false,
+          createdAt: new Date("2026-06-01T00:00:00.000Z")
+        }
+      ],
+      product: {
+        liveImageUrl: hiddenUrl,
+        imageUrl: null,
+        url: "https://example.com/products/hidden-linked-product-image",
+        verifiedFinalUrl: null,
+        sku: null,
+        upc: null,
+        dpci: null,
+        retailerProductId: null
+      }
     })
   );
 

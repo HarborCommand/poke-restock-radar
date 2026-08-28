@@ -188,7 +188,7 @@ test("storefront display image filter allows clean images and rejects unsafe fal
   assert.equal(isStorefrontDisplayImageUrl("https://cdn.example.com/products/pokemon-box-1280.webp"), true);
   assert.equal(isStorefrontDisplayImageUrl("https://example.com/products/pokemon-box/240.jpg"), false);
   assert.equal(isStorefrontDisplayImageUrl("https://cdn.example.com/pokemon-preorder-overlay.png"), false);
-  assert.equal(isStorefrontDisplayImageUrl("https://target.scene7.com/is/image/Target/GUEST_123456?wid=800&hei=800&qlt=80&fmt=webp"), false);
+  assert.equal(isStorefrontDisplayImageUrl("https://target.scene7.com/is/image/Target/GUEST_123456?wid=800&hei=800&qlt=80&fmt=webp"), true);
   assert.equal(isStorefrontDisplayImageUrl("https://covers1.booksamillion.com/covers/gift/1/96/214/136/196214136748.jpg"), false);
   assert.equal(isStorefrontDisplayImageUrl("data:image/png;base64,AAA"), false);
 });
