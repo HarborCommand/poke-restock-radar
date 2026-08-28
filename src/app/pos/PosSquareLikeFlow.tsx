@@ -2,14 +2,18 @@
 
 import { Check, ChevronLeft, CreditCard, UserRound } from "lucide-react";
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import feedbackStyles from "./PosCustomerAttachFeedback.module.css";
 import styles from "./PosSquareLikeFlow.module.css";
 
 type FlowMode = "sale" | "customer" | "payment";
+type FloatingActionStyle = Pick<CSSProperties, "left" | "transform" | "width">;
 
 const SQUARE_PENDING_STORAGE_KEY = "gamedaygrabs-pos-square-pending-v1";
 const SQUARE_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
+const FLOATING_ACTION_SIDE_MARGIN = 14;
+const FLOATING_ACTION_MIN_PANEL_WIDTH = 260;
+const FLOATING_ACTION_MAX_WIDTH = 540;
 
 function parseMoneyText(value: string | null | undefined) {
   const numeric = Number(String(value || "").replace(/[^0-9.-]/g, ""));
@@ -94,6 +98,32 @@ function elementIsCheckoutVisible(element: HTMLElement | null) {
   return visibleHeight >= Math.min(rect.height, 44) && visibleWidth >= Math.min(rect.width, 160);
 }
 
+function floatingDockStyleForCartPanel(cartPanel: HTMLElement | null): FloatingActionStyle {
+  if (!cartPanel || !cartPanel.isConnected) return {};
+
+  const rect = cartPanel.getBoundingClientRect();
+  const viewport = visibleViewportBounds();
+  const leftBound = viewport.left + FLOATING_ACTION_SIDE_MARGIN;
+  const rightBound = viewport.right - FLOATING_ACTION_SIDE_MARGIN;
+  const panelLeft = Math.max(rect.left, leftBound);
+  const panelRight = Math.min(rect.right, rightBound);
+  const panelWidth = panelRight - panelLeft;
+
+  if (panelWidth < FLOATING_ACTION_MIN_PANEL_WIDTH) return {};
+
+  const width = Math.min(FLOATING_ACTION_MAX_WIDTH, panelWidth);
+  const left = Math.min(Math.max(panelLeft + (panelWidth - width) / 2, leftBound), rightBound - width);
+  return {
+    left: `${Math.round(left)}px`,
+    transform: "none",
+    width: `${Math.round(width)}px`
+  };
+}
+
+function sameFloatingActionStyle(current: FloatingActionStyle, next: FloatingActionStyle) {
+  return current.left === next.left && current.transform === next.transform && current.width === next.width;
+}
+
 export function PosSquareLikeFlow() {
   const [mode, setMode] = useState<FlowMode>("sale");
   const [cartPanel, setCartPanel] = useState<HTMLElement | null>(null);
@@ -104,6 +134,7 @@ export function PosSquareLikeFlow() {
   const [completeButtonLabel, setCompleteButtonLabel] = useState("Complete Sale");
   const [completeButtonDisabled, setCompleteButtonDisabled] = useState(true);
   const [completeButtonVisible, setCompleteButtonVisible] = useState(true);
+  const [floatingActionStyle, setFloatingActionStyle] = useState<FloatingActionStyle>({});
   const [cartCount, setCartCount] = useState(0);
   const [totalCents, setTotalCents] = useState(0);
   const [attachedCustomerName, setAttachedCustomerName] = useState<string | null>(null);
@@ -218,8 +249,12 @@ export function PosSquareLikeFlow() {
       frame = window.requestAnimationFrame(() => {
         const nextSaleVisible = mode !== "sale" || elementIsCheckoutVisible(saleAction);
         const nextCompleteVisible = mode !== "payment" || elementIsCheckoutVisible(completeButton);
+        const nextFloatingActionStyle = floatingDockStyleForCartPanel(cartPanel);
         setSaleActionVisible((current) => (current === nextSaleVisible ? current : nextSaleVisible));
         setCompleteButtonVisible((current) => (current === nextCompleteVisible ? current : nextCompleteVisible));
+        setFloatingActionStyle((current) =>
+          sameFloatingActionStyle(current, nextFloatingActionStyle) ? current : nextFloatingActionStyle
+        );
       });
     };
 
@@ -246,7 +281,7 @@ export function PosSquareLikeFlow() {
       window.visualViewport?.removeEventListener("resize", syncVisibility);
       window.visualViewport?.removeEventListener("scroll", syncVisibility);
     };
-  }, [completeButton, mode, saleAction]);
+  }, [cartPanel, completeButton, mode, saleAction]);
 
   useEffect(() => {
     if (!cartPanel || mode !== "customer") return;
@@ -378,7 +413,7 @@ export function PosSquareLikeFlow() {
 
       {showPinnedCharge
         ? createPortal(
-            <div className={styles.floatingActionDock} aria-label="Pinned checkout action">
+            <div className={styles.floatingActionDock} style={floatingActionStyle} aria-label="Pinned checkout action">
               <div className={styles.floatingSummary}>
                 <span>{cartCount === 1 ? "1 item" : `${cartCount} items`}</span>
                 <strong>{moneyFromCents(totalCents)}</strong>
@@ -399,7 +434,11 @@ export function PosSquareLikeFlow() {
 
       {showPinnedComplete
         ? createPortal(
-            <div className={styles.floatingActionDock} aria-label="Pinned complete sale action">
+            <div
+              className={styles.floatingActionDock}
+              style={floatingActionStyle}
+              aria-label="Pinned complete sale action"
+            >
               <button
                 className={`${styles.floatingChargeButton} ${styles.floatingCompleteButton}`}
                 type="button"

@@ -64,6 +64,12 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
 
   assert.match(flow, /elementIsCheckoutVisible/);
   assert.match(flow, /visibleViewportBounds/);
+  assert.match(flow, /floatingDockStyleForCartPanel/);
+  assert.match(flow, /getBoundingClientRect\(\)/);
+  assert.match(flow, /FLOATING_ACTION_MIN_PANEL_WIDTH/);
+  assert.match(flow, /FLOATING_ACTION_MAX_WIDTH/);
+  assert.match(flow, /sameFloatingActionStyle/);
+  assert.match(flow, /style=\{floatingActionStyle\}/);
   assert.match(flow, /aria-label="Pinned checkout action"/);
   assert.match(flow, /aria-label="Pinned complete sale action"/);
   assert.match(flow, /completeButtonIsDisabled/);

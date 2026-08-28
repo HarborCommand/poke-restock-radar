@@ -186,6 +186,8 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(flow, /hasActiveSquarePending/);
   assert.match(flow, /url\.searchParams\.has\("data"\)/);
   assert.match(flow, /elementIsCheckoutVisible/);
+  assert.match(flow, /floatingDockStyleForCartPanel/);
+  assert.match(flow, /style=\{floatingActionStyle\}/);
   assert.match(flow, /aria-label="Pinned checkout action"/);
   assert.match(flow, /aria-label="Pinned complete sale action"/);
   assert.match(flow, /completeButtonIsDisabled/);
