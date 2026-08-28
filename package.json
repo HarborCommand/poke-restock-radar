@@ -20,6 +20,7 @@
     "test:guardrails": "tsx --test tests/regression-guardrails.test.ts",
     "auth:smoke": "tsx scripts/auth-smoke.ts",
     "alert:smoke": "tsx scripts/alert-smoke.ts",
+    "health:prod": "node scripts/check-production-health.mjs",
     "admin:reset": "tsx scripts/admin-reset.ts",
     "smoke:prod": "tsx scripts/final-production-smoke.ts",
     "qa:viewport": "tsx scripts/viewport-qa.ts",

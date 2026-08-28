@@ -43,13 +43,15 @@ Use an unpooled URL for `pg_dump`, `pg_restore`, and migration maintenance. Pool
 1. Create a new Vercel project named `poke-restock-radar`.
 2. Set the project root to this standalone folder.
 3. Confirm the linked project is not the Harbor Command project.
-4. Use the build command:
+4. Confirm Settings -> Git shows `HarborCommand/poke-restock-radar` without `Project Link not found`.
+5. Use the build command:
 
 ```bash
 npm run vercel-build
 ```
 
-5. Keep the included `vercel.json`; it registers only preserved internal cron routes.
+6. Keep the included `vercel.json`; it registers only preserved internal cron routes.
+7. If GitHub pushes do not create deployments, follow [Vercel Git Reconnect Runbook](vercel-git-reconnect-runbook.md).
 
 ## 4. Set Vercel Env Vars
 
@@ -139,11 +141,13 @@ Admin Health in the app should show database connectivity, preserved cron secret
 
 - `git remote -v` points to the Poke Restock Radar repository.
 - Vercel project is named `poke-restock-radar`.
+- Vercel Settings -> Git is connected to `HarborCommand/poke-restock-radar` and has no `Project Link not found` warning.
 - Neon database URL contains `poke_restock_radar_prod`.
 - `CRON_SECRET` and `MONITOR_JOB_SECRET` match.
 - Browser push keys are unique to this app.
 - Twilio and SMTP credentials are unique or intentionally scoped to this app.
 - `/api/health` returns OK or WARN, not ERROR.
+- `npm run health:prod` passes after production deploy and reports the current commit.
 - Admin can sign in.
 - No Restock Radar monitor controls or monitor logs are created by ordinary admin use.
 - Go / Buy Now opens the official retailer page only.

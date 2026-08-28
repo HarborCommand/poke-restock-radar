@@ -1,0 +1,31 @@
+name: Production health
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  storefront-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify production storefront health
+        env:
+          PRODUCTION_HEALTH_URL: https://www.gamedaygrabs.com/api/health
+          EXPECTED_BUILD_COMMIT: ${{ github.sha }}
+          HEALTH_RETRY_SECONDS: ${{ github.event_name == 'push' && '600' || '120' }}
+          HEALTH_RETRY_INTERVAL_MS: "30000"
+        run: node scripts/check-production-health.mjs
