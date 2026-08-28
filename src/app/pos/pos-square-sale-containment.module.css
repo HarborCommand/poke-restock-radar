@@ -52,8 +52,8 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   padding-right: 4px !important;
-  padding-bottom: 12px !important;
-  scroll-padding-bottom: 16px !important;
+  padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px)) !important;
+  scroll-padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px)) !important;
   scrollbar-gutter: stable;
 }
 
@@ -64,11 +64,13 @@
 
 /* PosSquareLikeFlow portals this footer directly into .pos-cart-panel. */
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel > [aria-label="Checkout action"]) {
-  position: relative !important;
-  inset: auto !important;
+  position: fixed !important;
+  inset: auto var(--pos-checkout-dock-right, max(14px, env(safe-area-inset-right))) max(12px, env(safe-area-inset-bottom)) var(--pos-checkout-dock-left, auto) !important;
   z-index: 20 !important;
   display: grid !important;
-  width: 100% !important;
+  width: var(--pos-checkout-dock-width, min(360px, calc(100vw - 28px))) !important;
+  max-width: calc(100vw - 28px) !important;
   flex: 0 0 auto !important;
   margin-top: 8px !important;
+  transform: var(--pos-checkout-dock-transform, none) !important;
 }

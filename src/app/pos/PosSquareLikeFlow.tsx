@@ -7,7 +7,12 @@ import feedbackStyles from "./PosCustomerAttachFeedback.module.css";
 import styles from "./PosSquareLikeFlow.module.css";
 
 type FlowMode = "sale" | "customer" | "payment";
-type FloatingActionStyle = Pick<CSSProperties, "left" | "transform" | "width">;
+type FloatingActionStyle = Pick<CSSProperties, "left" | "transform" | "width"> & {
+  "--pos-checkout-dock-left"?: string;
+  "--pos-checkout-dock-right"?: string;
+  "--pos-checkout-dock-transform"?: string;
+  "--pos-checkout-dock-width"?: string;
+};
 
 const SQUARE_PENDING_STORAGE_KEY = "gamedaygrabs-pos-square-pending-v1";
 const SQUARE_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
@@ -116,12 +121,24 @@ function floatingDockStyleForCartPanel(cartPanel: HTMLElement | null): FloatingA
   return {
     left: `${Math.round(left)}px`,
     transform: "none",
-    width: `${Math.round(width)}px`
+    width: `${Math.round(width)}px`,
+    "--pos-checkout-dock-left": `${Math.round(left)}px`,
+    "--pos-checkout-dock-right": "auto",
+    "--pos-checkout-dock-transform": "none",
+    "--pos-checkout-dock-width": `${Math.round(width)}px`
   };
 }
 
 function sameFloatingActionStyle(current: FloatingActionStyle, next: FloatingActionStyle) {
-  return current.left === next.left && current.transform === next.transform && current.width === next.width;
+  return (
+    current.left === next.left &&
+    current.transform === next.transform &&
+    current.width === next.width &&
+    current["--pos-checkout-dock-left"] === next["--pos-checkout-dock-left"] &&
+    current["--pos-checkout-dock-right"] === next["--pos-checkout-dock-right"] &&
+    current["--pos-checkout-dock-transform"] === next["--pos-checkout-dock-transform"] &&
+    current["--pos-checkout-dock-width"] === next["--pos-checkout-dock-width"]
+  );
 }
 
 export function PosSquareLikeFlow() {
@@ -456,7 +473,12 @@ export function PosSquareLikeFlow() {
       {createPortal(
         <>
           {mode === "sale" ? (
-            <div ref={setSaleActionNode} className={styles.chargeBar} aria-label="Checkout action">
+            <div
+              ref={setSaleActionNode}
+              className={styles.chargeBar}
+              style={floatingActionStyle}
+              aria-label="Checkout action"
+            >
               <div className={styles.saleSummary}>
                 <span>{cartCount === 1 ? "1 item" : `${cartCount} items`}</span>
                 <strong>{moneyFromCents(totalCents)}</strong>

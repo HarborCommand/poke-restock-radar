@@ -142,15 +142,16 @@
 
 .floatingActionDock {
   position: fixed;
-  left: 50%;
+  right: var(--pos-checkout-dock-right, max(14px, env(safe-area-inset-right)));
+  left: var(--pos-checkout-dock-left, auto);
   bottom: max(12px, env(safe-area-inset-bottom));
   z-index: 5100;
   display: grid;
   grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr);
   align-items: center;
   gap: 10px;
-  width: min(540px, calc(100vw - 28px));
-  transform: translateX(-50%);
+  width: var(--pos-checkout-dock-width, min(360px, calc(100vw - 28px)));
+  transform: var(--pos-checkout-dock-transform, none);
   border: 1px solid rgba(60, 60, 67, 0.16);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.98);

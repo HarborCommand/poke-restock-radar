@@ -178,6 +178,7 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   const layout = readFileSync(path.join(root, "src/app/pos/layout.tsx"), "utf8");
   const flow = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.tsx"), "utf8");
   const flowCss = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.module.css"), "utf8");
+  const saleViewportGuardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
 
   assert.match(layout, /<PosSquareLikeFlow \/>/);
   assert.match(flow, /data\.posSquareFlowMode = mode/);
@@ -187,6 +188,9 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(flow, /url\.searchParams\.has\("data"\)/);
   assert.match(flow, /elementIsCheckoutVisible/);
   assert.match(flow, /floatingDockStyleForCartPanel/);
+  assert.match(flow, /"--pos-checkout-dock-left"/);
+  assert.match(flow, /"--pos-checkout-dock-right"/);
+  assert.match(flow, /"--pos-checkout-dock-width"/);
   assert.match(flow, /style=\{floatingActionStyle\}/);
   assert.match(flow, /aria-label="Pinned checkout action"/);
   assert.match(flow, /aria-label="Pinned complete sale action"/);
@@ -197,6 +201,9 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(flowCss, /data-pos-square-flow-mode="payment"[\s\S]*\.pos-complete-button[\s\S]*position: sticky !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="customer"[\s\S]*\.pos-customer-panel[\s\S]*display: block !important/);
   assert.match(flowCss, /\.floatingActionDock[\s\S]*position: fixed/);
+  assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*position: fixed !important/);
+  assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*right: var\(--pos-checkout-dock-right/);
+  assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*left: var\(--pos-checkout-dock-left/);
 });
 
 test("core safety regression suites remain part of the default test command", () => {

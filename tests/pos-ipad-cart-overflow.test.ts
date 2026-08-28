@@ -59,8 +59,12 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*-webkit-overflow-scrolling: touch/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*flex: 0 0 auto !important/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*min-height: 66px !important/);
-  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*position: sticky !important/);
-  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*bottom: 0 !important/);
+  assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*padding-bottom: max\(92px/);
+  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*position: fixed !important/);
+  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*right: var\(--pos-checkout-dock-right/);
+  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*left: var\(--pos-checkout-dock-left/);
+  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*width: var\(--pos-checkout-dock-width/);
+  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*transform: var\(--pos-checkout-dock-transform/);
 
   assert.match(flow, /elementIsCheckoutVisible/);
   assert.match(flow, /visibleViewportBounds/);
@@ -70,6 +74,10 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(flow, /FLOATING_ACTION_MAX_WIDTH/);
   assert.match(flow, /sameFloatingActionStyle/);
   assert.match(flow, /style=\{floatingActionStyle\}/);
+  assert.match(flow, /"--pos-checkout-dock-left"/);
+  assert.match(flow, /"--pos-checkout-dock-right"/);
+  assert.match(flow, /"--pos-checkout-dock-width"/);
+  assert.match(flow, /"--pos-checkout-dock-transform"/);
   assert.match(flow, /aria-label="Pinned checkout action"/);
   assert.match(flow, /aria-label="Pinned complete sale action"/);
   assert.match(flow, /completeButtonIsDisabled/);
