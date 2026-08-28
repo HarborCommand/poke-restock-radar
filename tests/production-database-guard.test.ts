@@ -41,6 +41,21 @@ test("production database guard rejects empty or PR databases in production", ()
   assert.match(result.errors.join("\n"), /preview\/test database target/i);
 });
 
+test("production database guard rejects unrelated Quickz or Harbor Command database targets", () => {
+  const result = validateProductionDatabaseConfig({
+    VERCEL_ENV: "production",
+    DATABASE_URL:
+      "postgresql://quickz_owner:secret@ep-quickz-example-pooler.c-7.us-east-1.aws.neon.tech/quickz_prod?sslmode=require",
+    DATABASE_URL_UNPOOLED:
+      "postgresql://harbor_command_owner:secret@ep-harbor-example.c-7.us-east-1.aws.neon.tech/harbor_command_prod?sslmode=require"
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /preview\/test database target/i);
+  assert.match(result.errors.join("\n"), /quickz/i);
+  assert.match(result.errors.join("\n"), /harbor_command/i);
+});
+
 test("production database guard output redacts passwords", () => {
   const result = validateProductionDatabaseConfig({
     VERCEL_ENV: "production",

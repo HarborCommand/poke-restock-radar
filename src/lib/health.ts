@@ -17,8 +17,10 @@ export function appHealthStatusFromChecks(input: {
   adminUserCount: number;
   configuredAdminEmailExists: boolean;
   warnings: string[];
+  storefrontReady?: boolean;
 }): AppHealthDTO["status"] {
   if (!input.databaseOk || input.coreMissing.length > 0 || !input.authReady || input.adminUserCount === 0) return "ERROR";
+  if (input.storefrontReady === false) return "WARN";
   if (input.warnings.length > 0 || !input.configuredAdminEmailExists) return "WARN";
   return "OK";
 }
@@ -63,6 +65,11 @@ export function publicHealthFromAppHealth(health: AppHealthDTO): PublicAppHealth
     warningCount += 1;
   }
 
+  if (health.storefront?.publicCatalogReady === false) {
+    warningCategories.add("storefront");
+    warningCount += 1;
+  }
+
   return {
     status: health.status,
     timestamp: health.checkedAt,
@@ -82,6 +89,10 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
     provider: env.databaseProvider,
     urlConfigured: env.databaseProvider !== "unknown",
     productionSafe: env.nodeEnv !== "production" || env.databaseProvider === "postgres"
+  };
+  let storefront: AppHealthDTO["storefront"] = {
+    publicProductCount: null,
+    publicCatalogReady: env.nodeEnv !== "production"
   };
 
   try {
@@ -128,7 +139,7 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
   if (database.ok) {
     try {
       const configuredAdminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-      const [lastAlert, unreadCount, adminUserCount, configuredAdminRows, lastAdminLogin] = await Promise.all([
+      const [lastAlert, unreadCount, adminUserCount, configuredAdminRows, lastAdminLogin, publicProductCount] = await Promise.all([
         prisma.alert.findFirst({ orderBy: { timestamp: "desc" } }),
         prisma.alert.count({ where: { read: false } }),
         prisma.user.count({ where: { role: "ADMIN" } }),
@@ -141,6 +152,13 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
           where: { role: "ADMIN", lastLoginAt: { not: null } },
           orderBy: { lastLoginAt: "desc" },
           select: { lastLoginAt: true }
+        }),
+        prisma.inventoryItem.count({
+          where: {
+            publishToStore: true,
+            publicSlug: { not: null },
+            storeStatus: { in: ["active", "sold_out"] }
+          }
         })
       ]);
 
@@ -156,10 +174,20 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
         configuredAdminEmailExists: configuredAdminRows.length > 0,
         lastAdminLoginAt: lastAdminLogin?.lastLoginAt?.toISOString() ?? null
       };
+      storefront = {
+        publicProductCount,
+        publicCatalogReady: env.nodeEnv !== "production" || publicProductCount > 0
+      };
     } catch (error) {
+      const safeError = sanitizeLogText(errorMessage(error)).slice(0, 240);
       monitor = {
         ...monitor,
-        lastError: sanitizeLogText(errorMessage(error)).slice(0, 240)
+        lastError: safeError
+      };
+      storefront = {
+        publicProductCount: null,
+        publicCatalogReady: false,
+        error: safeError
       };
     }
   }
@@ -170,7 +198,8 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
     authReady: auth.authReady,
     adminUserCount: auth.adminUserCount,
     configuredAdminEmailExists: auth.configuredAdminEmailExists,
-    warnings: env.warnings
+    warnings: env.warnings,
+    storefrontReady: storefront.publicCatalogReady
   });
 
   return {
@@ -185,6 +214,7 @@ export async function getAppHealth(currentUser?: SessionUser): Promise<AppHealth
       warnings: env.warnings
     },
     database,
+    storefront,
     auth,
     monitor,
     alerts,

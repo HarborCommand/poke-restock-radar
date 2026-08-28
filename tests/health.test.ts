@@ -253,6 +253,10 @@ test("product search fallback warning remains available in detailed health data"
         urlConfigured: true,
         productionSafe: true
       },
+      storefront: {
+        publicProductCount: 3,
+        publicCatalogReady: true
+      },
       auth: {
         authSecretConfigured: true,
         authSecretStrong: true,
@@ -302,6 +306,75 @@ test("product search fallback warning remains available in detailed health data"
     assert.deepEqual(publicHealth.warningCategories, ["configuration"]);
     assert.doesNotMatch(publicSerialized, /PRODUCT_SEARCH_FALLBACK_ENABLED|PRODUCT_SEARCH_PROVIDER|PRODUCT_SEARCH_API_URL|PRODUCT_SEARCH_API_KEY|serpapi/);
   });
+});
+
+test("public health warns when production storefront has no public products", () => {
+  const publicHealth = publicHealthFromAppHealth({
+    status: "WARN",
+    checkedAt: "2026-08-28T12:00:00.000Z",
+    environment: {
+      nodeEnv: "production",
+      appUrl: "https://www.gamedaygrabs.com",
+      isVercel: true,
+      coreMissing: [],
+      featureMissing: [],
+      warnings: []
+    },
+    database: {
+      ok: true,
+      provider: "postgres",
+      urlConfigured: true,
+      productionSafe: true
+    },
+    storefront: {
+      publicProductCount: 0,
+      publicCatalogReady: false
+    },
+    auth: {
+      authSecretConfigured: true,
+      authSecretStrong: true,
+      authReady: true,
+      sessionCookieName: "__Host-poke_radar_session",
+      secureCookie: true,
+      sameSite: "lax",
+      sessionDays: 14,
+      currentSessionValid: false,
+      currentSessionEmail: null,
+      currentSessionRole: null,
+      adminUserCount: 1,
+      configuredAdminEmailPresent: true,
+      configuredAdminEmailExists: true,
+      lastAdminLoginAt: null,
+      passwordResetEmailConfigured: true
+    },
+    monitor: {
+      lastRunAt: null,
+      lastStatus: null,
+      lastSummary: null,
+      lastError: null,
+      dueProductCount: 0,
+      requestDelayMs: 1500,
+      monitorJobSecretConfigured: true,
+      vercelCronSecretConfigured: true
+    },
+    alerts: {
+      lastAlertAt: null,
+      lastAlertTitle: null,
+      lastAlertPriority: null,
+      unreadCount: 0
+    },
+    build: {
+      commitSha: "abcdef1234567890",
+      commitShort: "abcdef123456",
+      deployId: "dpl_internal",
+      buildTimestamp: "2026-08-28T11:59:00.000Z",
+      serviceWorkerVersion: "poke-radar-sw-test"
+    },
+    providers: {}
+  } as unknown as AppHealthDTO);
+
+  assert.equal(publicHealth.warningCount, 1);
+  assert.deepEqual(publicHealth.warningCategories, ["storefront"]);
 });
 
 test("health reports Resend as the preferred configured email provider without exposing values", () => {

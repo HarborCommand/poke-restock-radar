@@ -18,7 +18,7 @@ export type ProductionDatabaseGuardResult = {
 };
 
 const defaultExpectedDatabaseName = "poke_restock_radar_prod";
-const unsafeTargetPattern = /(preview|qa|test|empty|codex|pr\d+)/i;
+const unsafeTargetPattern = /(preview|qa|test|empty|codex|pr\d+|quickz|harbor[_-]?command|harborcommand|yacht|vessel)/i;
 
 function envFlag(value: string | undefined) {
   return String(value || "").trim().toLowerCase() === "true";

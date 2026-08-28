@@ -162,6 +162,19 @@ test("admin authentication routes apply rate limits origin checks and generic re
   assert.match(combined, /privateJson|withPrivateNoStore/);
 });
 
+test("forgot password form keeps a stable form reference across async submission", () => {
+  const app = readProjectFile("src/components/RadarApp.tsx");
+  const forgotHandlerStart = app.indexOf("async function handleForgotPassword");
+  const forgotHandlerEnd = app.indexOf("async function handleResetPassword");
+  const forgotHandler = app.slice(forgotHandlerStart, forgotHandlerEnd);
+
+  assert.match(forgotHandler, /const form = event\.currentTarget;/);
+  assert.match(forgotHandler, /const payload = formJson\(form\);/);
+  assert.match(forgotHandler, /body: JSON\.stringify\(payload\)/);
+  assert.match(forgotHandler, /form\.reset\(\);/);
+  assert.doesNotMatch(forgotHandler, /await[\s\S]*event\.currentTarget\.reset\(\)/);
+});
+
 test("one-time authentication records are invalidated on reissue and atomically claimed", () => {
   const customerAuth = readProjectFile("src/lib/customer-account-auth.ts");
   const adminReset = readProjectFile("src/lib/password-reset.ts");

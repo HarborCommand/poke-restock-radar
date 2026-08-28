@@ -2003,6 +2003,11 @@ export type AppHealthDTO = {
     productionSafe: boolean;
     error?: string;
   };
+  storefront?: {
+    publicProductCount: number | null;
+    publicCatalogReady: boolean;
+    error?: string;
+  };
   auth: {
     authSecretConfigured: boolean;
     authSecretStrong: boolean;
@@ -2181,7 +2186,7 @@ export type PublicAppHealthDTO = {
   timestamp: string;
   databaseOk: boolean;
   warningCount: number;
-  warningCategories: Array<"database" | "configuration" | "auth" | "providers" | "monitor">;
+  warningCategories: Array<"database" | "configuration" | "auth" | "providers" | "monitor" | "storefront">;
   buildCommit: string;
 };
 

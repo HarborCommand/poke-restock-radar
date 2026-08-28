@@ -2900,15 +2900,17 @@ function LoginShell({
 
   async function handleForgotPassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
+    const payload = formJson(form);
     setLocalBusy(true);
     setLocalError(null);
     setLocalMessage(null);
     try {
       const result = await requestJson<{ message: string; expiresInMinutes: number }>("/api/auth/forgot-password", {
         method: "POST",
-        body: JSON.stringify(formJson(event.currentTarget))
+        body: JSON.stringify(payload)
       });
-      event.currentTarget.reset();
+      form.reset();
       setLocalMessage(`${result.message} Reset links expire in ${result.expiresInMinutes} minutes.`);
     } catch (forgotError) {
       setLocalError(forgotError instanceof Error ? forgotError.message : "Password reset request failed");
