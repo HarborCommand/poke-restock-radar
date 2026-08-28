@@ -54,6 +54,7 @@ test("production deploy path uses migrations instead of destructive schema push"
   );
   assert.equal(pkg.scripts["vercel-build"], "tsx scripts/vercel-build.ts");
   assert.match(vercelBuildScript, /vercelEnv === "production"/);
+  assert.match(vercelBuildScript, /tsx", \["scripts\/guard-production-database\.ts"\]/);
   assert.match(vercelBuildScript, /npm", \["run", "prisma:postgres"\]/);
   assert.match(vercelBuildScript, /tsx", \["scripts\/migrate-postgres-production\.ts"\]/);
   assert.match(vercelBuildScript, /prisma", \["generate", "--schema", "\.prisma-postgres\/schema\.prisma"\]/);

@@ -32,6 +32,7 @@ const usesPostgres = /^postgres(?:ql)?:\/\//i.test(databaseUrl);
 
 if (vercelEnv === "production") {
   console.log("Running production Vercel build with Postgres migrations.");
+  run("tsx", ["scripts/guard-production-database.ts"]);
   run("npm", ["run", "prisma:postgres"]);
   run("tsx", ["scripts/migrate-postgres-production.ts"]);
   run("prisma", ["generate", "--schema", ".prisma-postgres/schema.prisma"]);
