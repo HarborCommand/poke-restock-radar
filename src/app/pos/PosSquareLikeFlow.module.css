@@ -241,9 +241,20 @@
   display: none !important;
 }
 
+:global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-tax-override-panel) {
+  order: 2;
+  display: grid !important;
+  flex: 0 0 auto !important;
+  margin: 0 0 12px !important;
+  border: 1px solid #e7e5e4 !important;
+  border-radius: 13px !important;
+  background: #ffffff !important;
+  padding: 14px !important;
+}
+
 /* Receipt delivery remains an explicit checkout choice on the payment screen. */
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-receipt-email-panel) {
-  order: 3;
+  order: 4;
   display: block !important;
   flex: 0 0 auto !important;
   margin-top: 12px !important;
@@ -287,7 +298,7 @@
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-payment-panel) {
-  order: 2;
+  order: 3;
   display: block !important;
   flex: 1 0 auto !important;
   min-height: 0 !important;
@@ -313,7 +324,7 @@
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="payment"] .pos-complete-button) {
-  order: 4;
+  order: 5;
   position: sticky !important;
   bottom: max(0px, env(safe-area-inset-bottom)) !important;
   z-index: 12 !important;
@@ -344,6 +355,11 @@
   border-radius: 13px !important;
   background: #ffffff !important;
   padding: 16px !important;
+}
+
+:global([data-pos-authenticated="true"][data-pos-square-flow-mode="customer"] .pos-tax-override-panel),
+:global([data-pos-authenticated="true"][data-pos-square-flow-mode="customer"] .pos-receipt-email-panel) {
+  display: none !important;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="customer"] .pos-customer-results) {

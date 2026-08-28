@@ -7108,6 +7108,16 @@ function posSaleFingerprint(input: {
   });
 }
 
+function posNoTaxOverrideAvailable(
+  taxFeatures: ReturnType<typeof taxFeatureConfig>,
+  settings: StorefrontSettingsDTO
+) {
+  const controlledExemptWorkflow = taxFeatures.taxExemptSalesEnabled && settings.tax.taxExemptSalesEnabled;
+  const posTaxProfileComplete = Boolean(settings.tax.storeCounty && settings.tax.effectiveAt && settings.tax.sourceNote);
+  const posManualOverride = taxFeatures.posSalesTaxEnabled && settings.tax.posTaxEnabled && posTaxProfileComplete;
+  return controlledExemptWorkflow || posManualOverride;
+}
+
 function posSaleLineNote(input: {
   saleReference: string;
   paymentMethodLabel: string;
@@ -7533,7 +7543,7 @@ export async function quotePosSaleTax(
 
   const taxFeatures = taxFeatureConfig();
   const taxExempt = Boolean(input.taxExempt);
-  const exemptionAvailable = taxFeatures.taxExemptSalesEnabled && settings.tax.taxExemptSalesEnabled;
+  const exemptionAvailable = posNoTaxOverrideAvailable(taxFeatures, settings);
   if (taxExempt && !exemptionAvailable) throw new Error("Tax-exempt sales are disabled.");
   if (taxExempt && (!input.taxExemptReason?.trim() || !input.taxExemptionReference?.trim())) {
     throw new Error("Tax-exempt sales require a reason and certificate or authorization reference.");
@@ -7662,7 +7672,7 @@ export async function createPosSale(
     throw new Error("Complete the store county, effective date, and tax source note before collecting POS tax.");
   }
   const taxExempt = Boolean(input.taxExempt);
-  if (taxExempt && (!taxFeatures.taxExemptSalesEnabled || !settings.tax.taxExemptSalesEnabled)) {
+  if (taxExempt && !posNoTaxOverrideAvailable(taxFeatures, settings)) {
     throw new Error("Tax-exempt sales are disabled.");
   }
   if (taxExempt && (!input.taxExemptReason?.trim() || !input.taxExemptionReference?.trim())) {
@@ -7694,7 +7704,7 @@ export async function createPosSale(
     if (activeTaxFeatures.posSalesTaxEnabled && (!activeSettings.tax.storeCounty || !activeSettings.tax.effectiveAt || !activeSettings.tax.sourceNote)) {
       throw new Error("Complete the store county, effective date, and tax source note before collecting POS tax.");
     }
-    if (taxExempt && (!activeTaxFeatures.taxExemptSalesEnabled || !activeSettings.tax.taxExemptSalesEnabled)) {
+    if (taxExempt && !posNoTaxOverrideAvailable(activeTaxFeatures, activeSettings)) {
       throw new Error("Tax-exempt sales are disabled.");
     }
     const posTaxEnabled = activeTaxFeatures.posSalesTaxEnabled && activeSettings.tax.posTaxEnabled;

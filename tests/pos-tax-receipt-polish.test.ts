@@ -163,6 +163,26 @@ test("POS client waits for the newest server quote and never submits browser tax
   assert.doesNotMatch(completionBody, /cartTotals\.(tax|total)|taxQuote\.(tax|total)|clientTax/);
 });
 
+test("POS register exposes a per-sale tax switch backed by server override checks", () => {
+  const app = readSource("src/components/RadarApp.tsx");
+  const service = readSource("src/lib/radar-service.ts");
+  const flowCss = readSource("src/app/pos/PosSquareLikeFlow.module.css");
+  const posPanel = sourceSlice(app, "function PosPanel", "function PosReceipt");
+  const overrideHelper = sourceSlice(service, "function posNoTaxOverrideAvailable", "function posSaleLineNote");
+
+  assert.match(posPanel, /POS_MANUAL_NO_TAX_REASON/);
+  assert.match(posPanel, /POS_MANUAL_NO_TAX_REFERENCE/);
+  assert.match(posPanel, /Charge sales tax for this POS sale/);
+  assert.match(posPanel, /checked=\{!taxExempt\}/);
+  assert.match(posPanel, /updatePosTaxCharge/);
+  assert.match(posPanel, /pos-tax-override-panel/);
+  assert.match(overrideHelper, /taxFeatures\.posSalesTaxEnabled && settings\.tax\.posTaxEnabled && posTaxProfileComplete/);
+  assert.match(overrideHelper, /taxFeatures\.taxExemptSalesEnabled && settings\.tax\.taxExemptSalesEnabled/);
+  assert.match(service, /if \(taxExempt && !posNoTaxOverrideAvailable\(taxFeatures, settings\)\)/);
+  assert.match(service, /if \(taxExempt && !posNoTaxOverrideAvailable\(activeTaxFeatures, activeSettings\)\)/);
+  assert.match(flowCss, /data-pos-square-flow-mode="payment"[\s\S]*\.pos-tax-override-panel[\s\S]*display: grid !important/);
+});
+
 test("receipt is itemized, customer contact is masked, and tax/refund details stay separate", () => {
   const app = readSource("src/components/RadarApp.tsx");
   const summary = sourceSlice(app, "function maskPosReceiptEmail", "function PosPanel");

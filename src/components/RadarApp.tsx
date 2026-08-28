@@ -5251,6 +5251,8 @@ function RewardAdjustmentModal({
 
 const posQuickFilters = ["All", "Booster Boxes", "ETBs", "Singles", "Accessories"] as const;
 const POS_RESULT_BATCH_SIZE = 24;
+const POS_MANUAL_NO_TAX_REASON = "Manual POS no-tax override";
+const POS_MANUAL_NO_TAX_REFERENCE = "POS manual override";
 type PosQuickFilter = (typeof posQuickFilters)[number];
 type PosCartLine = {
   itemId: string;
@@ -5518,7 +5520,18 @@ function PosPanel({
       lineTotal: number;
     } => Boolean(line));
   const cartQuantity = cartLines.reduce((sum, line) => sum + line.quantity, 0);
-  const taxExemptAvailable = dashboard.storefrontSettings.tax.features.taxExemptSalesEnabled && dashboard.storefrontSettings.tax.taxExemptSalesEnabled;
+  const posTaxProfileComplete = Boolean(
+    dashboard.storefrontSettings.tax.storeCounty &&
+    dashboard.storefrontSettings.tax.effectiveAt &&
+    dashboard.storefrontSettings.tax.sourceNote
+  );
+  const posManualNoTaxAvailable =
+    dashboard.storefrontSettings.tax.features.posSalesTaxEnabled &&
+    dashboard.storefrontSettings.tax.posTaxEnabled &&
+    posTaxProfileComplete;
+  const taxExemptAvailable =
+    posManualNoTaxAvailable ||
+    (dashboard.storefrontSettings.tax.features.taxExemptSalesEnabled && dashboard.storefrontSettings.tax.taxExemptSalesEnabled);
   const configuredPosTaxRate = !taxExempt && dashboard.storefrontSettings.tax.features.posSalesTaxEnabled && dashboard.storefrontSettings.tax.posTaxEnabled
     ? dashboard.storefrontSettings.tax.combinedRateBasisPoints / 10_000
     : 0;
@@ -5833,6 +5846,15 @@ function PosPanel({
     setCustomerSearchMessage(null);
   }
 
+  function updatePosTaxCharge(shouldChargeTax: boolean) {
+    const shouldSkipTax = !shouldChargeTax;
+    setTaxExempt(shouldSkipTax);
+    if (shouldSkipTax) {
+      setTaxExemptReason((current) => current.trim() || POS_MANUAL_NO_TAX_REASON);
+      setTaxExemptionReference((current) => current.trim() || POS_MANUAL_NO_TAX_REFERENCE);
+    }
+  }
+
   function handleCustomerSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -5879,7 +5901,7 @@ function PosPanel({
       return false;
     }
     if (taxExempt && (!taxExemptAvailable || !taxExemptReason.trim() || !taxExemptionReference.trim())) {
-      setPosMessage("Tax-exempt sales require the enabled admin workflow, a reason, and a certificate or authorization reference.");
+      setPosMessage("No-tax POS sales require a reason and reference so the sale record stays clear.");
       return false;
     }
     if (taxQuoteStatus === "loading") {
@@ -6229,17 +6251,18 @@ function PosPanel({
             <span className="total">Total <strong>{money(quotedTotal)}</strong></span>
           </div>
           {taxExemptAvailable ? (
-            <div className="pos-customer-panel" aria-label="Tax exemption controls">
+            <div className="pos-customer-panel pos-tax-override-panel" aria-label="POS tax controls">
               <label className="checkbox-row">
-                <input type="checkbox" checked={taxExempt} onChange={(event) => setTaxExempt(event.currentTarget.checked)} />
-                Admin-approved tax-exempt sale
+                <input type="checkbox" checked={!taxExempt} onChange={(event) => updatePosTaxCharge(event.currentTarget.checked)} />
+                Charge sales tax for this POS sale
               </label>
+              <small>{taxExempt ? "Tax is off for this sale only. The completed sale is saved as a no-tax POS override." : "Tax is on for this sale."}</small>
               {taxExempt ? (
                 <>
-                  <label className="pos-reference-input">Exemption reason<input value={taxExemptReason} onChange={(event) => setTaxExemptReason(event.currentTarget.value)} maxLength={160} /></label>
-                  <label className="pos-reference-input">Certificate / authorization reference<input value={taxExemptionReference} onChange={(event) => setTaxExemptionReference(event.currentTarget.value)} maxLength={120} /></label>
+                  <label className="pos-reference-input">No-tax reason<input value={taxExemptReason} onChange={(event) => setTaxExemptReason(event.currentTarget.value)} maxLength={160} /></label>
+                  <label className="pos-reference-input">Reference<input value={taxExemptionReference} onChange={(event) => setTaxExemptionReference(event.currentTarget.value)} maxLength={120} /></label>
                   <label className="pos-reference-input">Internal note<textarea value={taxExemptionNote} onChange={(event) => setTaxExemptionNote(event.currentTarget.value)} maxLength={1000} rows={2} /></label>
-                  <small>Exemption is never inferred from a claim. The server records an immutable audit event.</small>
+                  <small>The server records this override on the receipt, sale record, and tax adjustment log.</small>
                 </>
               ) : null}
             </div>
