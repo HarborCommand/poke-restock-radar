@@ -48,6 +48,7 @@ test("Phase 1 package scripts are present", () => {
 test("production deploy path uses migrations instead of destructive schema push", () => {
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const vercelBuildScript = readFileSync(join(root, "scripts", "vercel-build.ts"), "utf8");
+  const migrationScript = readFileSync(join(root, "scripts", "migrate-postgres-production.ts"), "utf8");
   assert.equal(
     pkg.scripts["db:migrate:prod"],
     "npm run prisma:postgres && tsx scripts/migrate-postgres-production.ts"
@@ -58,6 +59,8 @@ test("production deploy path uses migrations instead of destructive schema push"
   assert.match(vercelBuildScript, /npm", \["run", "prisma:postgres"\]/);
   assert.match(vercelBuildScript, /tsx", \["scripts\/migrate-postgres-production\.ts"\]/);
   assert.match(vercelBuildScript, /prisma", \["generate", "--schema", "\.prisma-postgres\/schema\.prisma"\]/);
+  assert.match(migrationScript, /DATABASE_URL_UNPOOLED/);
+  assert.match(migrationScript, /DATABASE_URL:\s*directDatabaseUrl/);
   assert.doesNotMatch(pkg.scripts["vercel-build"], /db push|accept-data-loss/);
   assert.doesNotMatch(vercelBuildScript, /db push|accept-data-loss/);
 });

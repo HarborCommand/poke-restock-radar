@@ -12,6 +12,16 @@ type CommandResult = {
   status: number;
 };
 
+function migrationEnv() {
+  const directDatabaseUrl = process.env.DATABASE_URL_UNPOOLED?.trim();
+  if (!directDatabaseUrl) return process.env;
+
+  return {
+    ...process.env,
+    DATABASE_URL: directDatabaseUrl
+  };
+}
+
 function prismaBin() {
   return process.platform === "win32" ? "prisma.cmd" : "prisma";
 }
@@ -31,7 +41,7 @@ function runPrisma(
 ): CommandResult {
   const result = spawnSync(prismaBin(), args, {
     encoding: "utf8",
-    env: process.env
+    env: migrationEnv()
   });
   const output = [result.stdout, result.stderr, result.error?.message].filter(Boolean).join("\n");
   const status = result.status ?? 1;
@@ -202,6 +212,10 @@ END $$;
 `;
 
 async function main() {
+  if (process.env.DATABASE_URL_UNPOOLED?.trim()) {
+    console.log("Using DATABASE_URL_UNPOOLED for production Prisma migration commands.");
+  }
+
   console.log("Checking production Prisma migration status.");
   const status = runPrisma(["migrate", "status", "--schema", schemaPath], {
     allowFailure: true,
