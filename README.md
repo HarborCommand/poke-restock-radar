@@ -25,6 +25,12 @@ Default local-only seed login:
 
 Set `AUTH_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD_HASH` before any shared or deployed use.
 
+Production environment boundary:
+
+- This app must use the standalone GameDayGrabs `poke_restock_radar_prod` Neon database in Production.
+- Do not reuse Quickz, Harbor Command, preview, QA, test, or empty Neon database URLs for this project.
+- Production deploys run database and storefront data guards before `next build`; they reject unsafe database names, an empty public catalog, or a missing Admin user so a bad env change cannot silently publish a broken storefront.
+
 ## Phase 1 Scope
 
 - Private login shell

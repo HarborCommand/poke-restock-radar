@@ -36,6 +36,7 @@ if (vercelEnv === "production") {
   run("npm", ["run", "prisma:postgres"]);
   run("tsx", ["scripts/migrate-postgres-production.ts"]);
   run("prisma", ["generate", "--schema", ".prisma-postgres/schema.prisma"]);
+  run("tsx", ["scripts/guard-production-storefront-data.ts"]);
 } else if (usesPostgres) {
   console.log(`Running ${vercelEnv} Vercel build with Postgres Prisma client.`);
   run("npm", ["run", "prisma:postgres"]);

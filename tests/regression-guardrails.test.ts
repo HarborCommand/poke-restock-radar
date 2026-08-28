@@ -208,3 +208,19 @@ test("production configuration contains no automatic Vercel jobs", () => {
     "Do not add automatic Vercel cron jobs: they can wake Neon and create charges while the app is unused."
   );
 });
+
+test("production deploys guard against wrong or empty storefront databases", () => {
+  const build = readFileSync(path.join(root, "scripts/vercel-build.ts"), "utf8");
+  const databaseGuard = readFileSync(path.join(root, "src/lib/production-database-guard.ts"), "utf8");
+  const storefrontDataGuard = readFileSync(path.join(root, "src/lib/production-storefront-data-guard.ts"), "utf8");
+  const storefrontDataScript = readFileSync(path.join(root, "scripts/guard-production-storefront-data.ts"), "utf8");
+
+  assert.match(build, /scripts\/guard-production-database\.ts/);
+  assert.match(build, /scripts\/guard-production-storefront-data\.ts/);
+  assert.match(databaseGuard, /quickz/i);
+  assert.match(databaseGuard, /harbor\[_-\]\?command/i);
+  assert.match(storefrontDataGuard, /No public storefront products exist/);
+  assert.match(storefrontDataGuard, /No Admin users exist/);
+  assert.match(storefrontDataScript, /poke_restock_radar_prod/);
+  assert.match(storefrontDataScript, /unrelated apps, preview, QA, or empty databases/);
+});
