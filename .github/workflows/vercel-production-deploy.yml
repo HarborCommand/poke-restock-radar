@@ -1,0 +1,53 @@
+name: Vercel production deploy fallback
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poke-restock-radar-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      VERCEL_ORG_ID: team_lZ5uqSLWZgwBynAh48f23zJA
+      VERCEL_PROJECT_ID: prj_FFVI8ET1BkrnRJQ77XkjRNIwaCsu
+      VERCEL_TOKEN: ${{ secrets.POKE_RADAR_VERCEL_TOKEN }}
+    steps:
+      - name: Skip when token is not configured
+        if: ${{ env.VERCEL_TOKEN == '' }}
+        run: |
+          echo "::notice::POKE_RADAR_VERCEL_TOKEN is not configured. Skipping direct Vercel deploy fallback."
+
+      - uses: actions/checkout@v4
+        if: ${{ env.VERCEL_TOKEN != '' }}
+
+      - uses: actions/setup-node@v4
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        run: npm ci
+
+      - name: Pull Vercel production settings
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        run: npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel output
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        run: npx vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy production
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        run: npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"

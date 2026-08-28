@@ -72,3 +72,25 @@ The `Production health` GitHub workflow checks:
 - production `buildCommit` matches the latest `main` commit after pushes.
 
 If that workflow fails after a push, check Vercel Settings -> Git first.
+
+## Direct Deploy Fallback
+
+The `Vercel production deploy fallback` GitHub workflow can deploy production without relying on the Vercel Git app hook.
+
+It uses:
+
+- Vercel project ID: `prj_FFVI8ET1BkrnRJQ77XkjRNIwaCsu`
+- Vercel team ID: `team_lZ5uqSLWZgwBynAh48f23zJA`
+- GitHub secret: `POKE_RADAR_VERCEL_TOKEN`
+
+If the secret is missing, the workflow exits without deploying and prints a notice.
+
+To enable the fallback:
+
+1. Create a Vercel token with access to the `poke-restock-radar` project only if possible.
+2. In GitHub repo `HarborCommand/poke-restock-radar`, open Settings -> Secrets and variables -> Actions.
+3. Add repository secret `POKE_RADAR_VERCEL_TOKEN`.
+4. Run the `Vercel production deploy fallback` workflow manually once.
+5. Confirm `https://www.gamedaygrabs.com/api/health` reports the new commit.
+
+Use this fallback when Vercel Settings -> Git cannot be repaired immediately.

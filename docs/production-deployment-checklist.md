@@ -142,6 +142,7 @@ Admin Health in the app should show database connectivity, preserved cron secret
 - `git remote -v` points to the Poke Restock Radar repository.
 - Vercel project is named `poke-restock-radar`.
 - Vercel Settings -> Git is connected to `HarborCommand/poke-restock-radar` and has no `Project Link not found` warning.
+- GitHub Actions secret `POKE_RADAR_VERCEL_TOKEN` is configured if the direct Vercel deploy fallback is needed.
 - Neon database URL contains `poke_restock_radar_prod`.
 - `CRON_SECRET` and `MONITOR_JOB_SECRET` match.
 - Browser push keys are unique to this app.
