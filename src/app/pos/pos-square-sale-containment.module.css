@@ -5,8 +5,8 @@
 /*
  * The legacy iPad checkout stylesheet intentionally made the whole cart panel
  * one scroll surface. The Square-style checkout has a different contract:
- * Current Sale is a fixed-height column, only the basket scrolls, and Charge
- * remains a non-scrolling footer. These selectors carry one extra local-class
+ * Current Sale is a fixed-height column, the panel itself scrolls, and Charge
+ * remains a fixed action. These selectors carry one extra local-class
  * specificity level so they reliably win over the legacy !important rules.
  */
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-workspace) {
@@ -23,11 +23,14 @@
   max-height: 100% !important;
   flex-direction: column !important;
   align-self: stretch !important;
-  overflow: hidden !important;
-  overscroll-behavior: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   box-sizing: border-box !important;
-  padding-bottom: 14px !important;
-  scroll-padding: 0 !important;
+  padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
+  scroll-padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
 }
 
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-header) {
@@ -43,22 +46,17 @@
 
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
-  flex: 1 1 0 !important;
+  flex: 0 0 auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  overscroll-behavior-y: contain !important;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible !important;
   touch-action: pan-y;
   padding-right: 4px !important;
-  padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px)) !important;
-  scroll-padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 92px)) !important;
-  scrollbar-gutter: stable;
+  padding-bottom: 0 !important;
 }
 
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines.is-empty) {
-  flex: 1 1 90px !important;
+  flex: 0 0 90px !important;
   min-height: 0 !important;
 }
 

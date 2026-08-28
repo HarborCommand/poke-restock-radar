@@ -1,7 +1,7 @@
 /*
  * Square-style register flow.
  *
- * Sale screen: only the basket scrolls; Charge is always visible.
+ * Sale screen: the Current Sale panel scrolls beneath a fixed Charge action.
  * Customer and payment are focused screens that reuse the existing POS
  * controls/business logic instead of placing them below an ever-growing cart.
  */
@@ -12,8 +12,13 @@
   height: 100% !important;
   min-height: 0 !important;
   max-height: 100% !important;
-  overflow: hidden !important;
-  padding-bottom: 14px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
+  scroll-padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-header) {
@@ -56,21 +61,17 @@
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
-  flex: 1 1 0 !important;
+  flex: 0 0 auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  overscroll-behavior-y: contain !important;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible !important;
   touch-action: pan-y;
-  padding-right: 4px !important;
-  padding-bottom: 8px !important;
-  scrollbar-gutter: stable;
+  padding-right: 0 !important;
+  padding-bottom: 0 !important;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines.is-empty) {
-  flex: 1 1 90px !important;
+  flex: 0 0 90px !important;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-tax-profile-card),

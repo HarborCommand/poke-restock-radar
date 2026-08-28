@@ -151,8 +151,8 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(presentation, /querySelectorAll\("\.pos-cart-lines > \.pos-cart-line"\)\.length/);
   assert.doesNotMatch(presentation, /cartCountFromHeading/);
   assert.doesNotMatch(presentation, /fetch\(|\/api\//);
-  assert.match(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)/);
-  assert.match(overflowCss, /overflow-y: auto !important/);
+  assert.match(overflowCss, /\.pos-cart-panel\)[\s\S]*overflow-y: auto !important/);
+  assert.match(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow: visible !important/);
   assert.match(overflowCss, /grid-template-columns: 48px minmax\(0, 1fr\) 108px 34px !important/);
   assert.match(overflowCss, /> \.pos-cart-line-copy/);
   assert.match(overflowCss, /> \.pos-cart-quantity/);
@@ -195,7 +195,8 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(flow, /aria-label="Pinned checkout action"/);
   assert.match(flow, /aria-label="Pinned complete sale action"/);
   assert.match(flow, /completeButtonIsDisabled/);
-  assert.match(flowCss, /data-pos-square-flow-mode="sale"[\s\S]*\.pos-cart-lines[\s\S]*overflow-y: auto !important/);
+  assert.match(flowCss, /data-pos-square-flow-mode="sale"[\s\S]*\.pos-cart-panel[\s\S]*overflow-y: auto !important/);
+  assert.match(flowCss, /data-pos-square-flow-mode="sale"[\s\S]*\.pos-cart-lines[\s\S]*overflow: visible !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="sale"[\s\S]*\.pos-payment-panel[\s\S]*display: none !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="payment"[\s\S]*\.pos-payment-panel[\s\S]*display: block !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="payment"[\s\S]*\.pos-complete-button[\s\S]*position: sticky !important/);
