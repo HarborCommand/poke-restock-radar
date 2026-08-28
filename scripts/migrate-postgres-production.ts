@@ -12,6 +12,11 @@ type CommandResult = {
   status: number;
 };
 
+const maxConnectionAttempts = 5;
+const connectionRetryDelaysMs = [3000, 7000, 15000, 30000];
+const transientDatabaseErrorPattern =
+  /P1001|can't reach database server|connect ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|connection terminated|server closed the connection/i;
+
 function migrationEnv() {
   const directDatabaseUrl = process.env.DATABASE_URL_UNPOOLED?.trim();
   if (!directDatabaseUrl) return process.env;
@@ -33,6 +38,10 @@ function redact(output: string) {
       /Datasource "db": PostgreSQL database "[^"]+", schema "[^"]+" at "[^"]+"/g,
       'Datasource "db": PostgreSQL database [redacted]'
     );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function runPrisma(
@@ -57,13 +66,43 @@ function runPrisma(
   return { output, status };
 }
 
+async function runPrismaWithConnectionRetries(
+  args: string[],
+  options: { allowFailure?: boolean; printOutput?: boolean } = {}
+): Promise<CommandResult> {
+  for (let attempt = 1; attempt <= maxConnectionAttempts; attempt += 1) {
+    const result = runPrisma(args, {
+      ...options,
+      allowFailure: true
+    });
+    const shouldRetry = result.status !== 0 && transientDatabaseErrorPattern.test(result.output);
+    const hasRetryLeft = attempt < maxConnectionAttempts;
+
+    if (!shouldRetry || !hasRetryLeft) {
+      if (result.status !== 0 && !options.allowFailure) {
+        throw new Error(`prisma ${args.join(" ")} failed:\n${redact(result.output)}`);
+      }
+      return result;
+    }
+
+    const delay = connectionRetryDelaysMs[attempt - 1] ?? connectionRetryDelaysMs.at(-1) ?? 5000;
+    console.log(
+      `Prisma could not reach the production database; retrying in ${Math.round(delay / 1000)}s ` +
+        `(attempt ${attempt + 1}/${maxConnectionAttempts}).`
+    );
+    await sleep(delay);
+  }
+
+  return runPrisma(args, options);
+}
+
 async function runSqlCheck(sql: string) {
   const dir = await mkdtemp(join(tmpdir(), "poke-radar-migrate-"));
   const file = join(dir, "check.sql");
 
   try {
     await writeFile(file, sql, "utf8");
-    return runPrisma(["db", "execute", "--schema", schemaPath, "--file", file], {
+    return await runPrismaWithConnectionRetries(["db", "execute", "--schema", schemaPath, "--file", file], {
       allowFailure: true,
       printOutput: false
     });
@@ -217,7 +256,7 @@ async function main() {
   }
 
   console.log("Checking production Prisma migration status.");
-  const status = runPrisma(["migrate", "status", "--schema", schemaPath], {
+  const status = await runPrismaWithConnectionRetries(["migrate", "status", "--schema", schemaPath], {
     allowFailure: true,
     printOutput: false
   });
@@ -231,7 +270,7 @@ async function main() {
   }
 
   console.log("Production migration status requires deploy or repair; running migrate deploy.");
-  const deploy = runPrisma(["migrate", "deploy", "--schema", schemaPath], {
+  const deploy = await runPrismaWithConnectionRetries(["migrate", "deploy", "--schema", schemaPath], {
     allowFailure: true,
     printOutput: false
   });
@@ -255,7 +294,7 @@ async function main() {
   }
 
   console.log(`Verified existing production schema for ${baselineMigration}.`);
-  runPrisma(["migrate", "resolve", "--applied", baselineMigration, "--schema", schemaPath]);
+  await runPrismaWithConnectionRetries(["migrate", "resolve", "--applied", baselineMigration, "--schema", schemaPath]);
 
   const cancelRefund = await runSqlCheck(cancelRefundVerifier);
   if (cancelRefund.status === 0) {
@@ -267,7 +306,7 @@ async function main() {
     throw new Error(`Cancel/refund migration verification failed:\n${redact(cancelRefund.output)}`);
   }
 
-  runPrisma(["migrate", "deploy", "--schema", schemaPath]);
+  await runPrismaWithConnectionRetries(["migrate", "deploy", "--schema", schemaPath]);
   console.log("Production migration deploy completed.");
 }
 

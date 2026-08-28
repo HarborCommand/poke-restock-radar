@@ -61,6 +61,10 @@ test("production deploy path uses migrations instead of destructive schema push"
   assert.match(vercelBuildScript, /prisma", \["generate", "--schema", "\.prisma-postgres\/schema\.prisma"\]/);
   assert.match(migrationScript, /DATABASE_URL_UNPOOLED/);
   assert.match(migrationScript, /DATABASE_URL:\s*directDatabaseUrl/);
+  assert.match(migrationScript, /maxConnectionAttempts\s*=\s*5/);
+  assert.match(migrationScript, /transientDatabaseErrorPattern/);
+  assert.match(migrationScript, /P1001/);
+  assert.match(migrationScript, /runPrismaWithConnectionRetries/);
   assert.doesNotMatch(pkg.scripts["vercel-build"], /db push|accept-data-loss/);
   assert.doesNotMatch(vercelBuildScript, /db push|accept-data-loss/);
 });
