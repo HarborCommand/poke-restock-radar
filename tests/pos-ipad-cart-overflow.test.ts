@@ -36,6 +36,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   const guard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
   const pwaGuard = readFileSync(path.join(root, "src/app/pos/PosPwaCacheGuard.tsx"), "utf8");
   const page = readFileSync(path.join(root, "src/app/pos/page.tsx"), "utf8");
+  const serviceWorker = readFileSync(path.join(root, "public/sw.js"), "utf8");
   const viewportQa = readFileSync(path.join(root, "scripts/pos-viewport-qa.ts"), "utf8");
   const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
   const visibleGuard = readFileSync(path.join(root, "src/app/pos/PosVisibleViewport.tsx"), "utf8");
@@ -61,8 +62,11 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(pwaGuard, /registration\.active\?\.postMessage\(\{ type: "CLEAR_APP_CACHE" \}\)/);
   assert.match(pwaGuard, /key\.startsWith\(APP_CACHE_PREFIX\)/);
   assert.match(pwaGuard, /storageSet\(window\.localStorage, POS_PWA_CACHE_VERSION_KEY, version\)/);
-  assert.doesNotMatch(pwaGuard, /posPwaRefresh/);
-  assert.doesNotMatch(pwaGuard, /window\.location\.replace/);
+  assert.match(pwaGuard, /posPwaRefresh/);
+  assert.match(pwaGuard, /window\.location\.replace/);
+  assert.match(serviceWorker, /poke-radar-sw-2026-08-29-pos-install-v10/);
+  assert.match(serviceWorker, /refreshPosClients/);
+  assert.match(serviceWorker, /client\.navigate\(url\.toString\(\)\)/);
   assert.match(viewportQa, /\/pos\?source=pos-pwa/);
   assert.doesNotMatch(viewportQa, /expected fixed/);
   assert.match(viewportQa, /body\.position === "fixed"/);
@@ -106,6 +110,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guard, /const MIN_WORKSPACE_HEIGHT = 420/);
   assert.match(page, /data-pos-store-mode="true"/);
   assert.match(shell, /data-pos-checkout-host=\{user \? "true" : undefined\}/);
+  assert.match(shell, /data-pos-square-flow-mode=\{user && view === "checkout" \? "sale" : undefined\}/);
 
   assert.match(guard, /const BOTTOM_GAP = 64/);
   assert.match(guard, /import \{ getUsableViewportHeight \} from "\.\/posViewport"/);

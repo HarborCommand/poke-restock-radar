@@ -1,4 +1,5 @@
-const CACHE_NAME = "poke-radar-sw-2026-08-29-pos-install-v9";
+const CACHE_NAME = "poke-radar-sw-2026-08-29-pos-install-v10";
+const POS_REFRESH_PARAM = "posPwaRefresh";
 const OFFLINE_ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",
@@ -38,6 +39,23 @@ function posShouldBypassCache(request, url) {
   return isPosPath(url.pathname) || url.pathname === "/manifest-pos.webmanifest" || requestCameFromPos(request);
 }
 
+async function refreshPosClients() {
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  await Promise.all(
+    clients.map((client) => {
+      try {
+        const url = new URL(client.url);
+        if (url.origin !== self.location.origin || !isPosPath(url.pathname)) return Promise.resolve();
+        url.searchParams.set("source", "pos-pwa");
+        url.searchParams.set(POS_REFRESH_PARAM, CACHE_NAME);
+        return client.navigate(url.toString());
+      } catch {
+        return Promise.resolve();
+      }
+    })
+  );
+}
+
 async function fetchFresh(request, fallbackUrl) {
   try {
     return await fetch(request, { cache: "reload" });
@@ -65,6 +83,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
       .then(() => notifyClients({ type: "APP_VERSION_READY" }))
+      .then(() => refreshPosClients())
   );
 });
 

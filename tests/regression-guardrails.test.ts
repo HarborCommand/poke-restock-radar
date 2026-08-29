@@ -142,6 +142,7 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(shell, /"checkout".*"products".*"customers".*"sales"/s);
   assert.match(shell, /data-pos-authenticated=\{user \? "true" : "false"\}/);
   assert.match(shell, /data-pos-checkout-host=\{user \? "true" : undefined\}/);
+  assert.match(shell, /data-pos-square-flow-mode=\{user && view === "checkout" \? "sale" : undefined\}/);
   assert.match(shell, /gamedaygrabs-pos-square-pending-v1/);
   assert.match(shell, /Finish or cancel the current Square payment before leaving Checkout/);
   assert.match(shell, /url\.searchParams\.has\("data"\)/);
@@ -209,11 +210,14 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(nextConfig, /private, no-store, no-cache/);
   assert.match(serviceWorker, /posShouldBypassCache/);
   assert.match(serviceWorker, /fetchFresh\(request, request\.mode === "navigate" \? "\/offline\.html" : null\)/);
+  assert.match(serviceWorker, /poke-radar-sw-2026-08-29-pos-install-v10/);
+  assert.match(serviceWorker, /refreshPosClients/);
+  assert.match(serviceWorker, /client\.navigate\(url\.toString\(\)\)/);
   assert.match(pwaGuard, /display-mode: standalone/);
   assert.match(pwaGuard, /CLEAR_APP_CACHE/);
   assert.match(pwaGuard, /storageSet\(window\.localStorage, POS_PWA_CACHE_VERSION_KEY, version\)/);
-  assert.doesNotMatch(pwaGuard, /window\.location\.replace/);
-  assert.doesNotMatch(pwaGuard, /posPwaRefresh/);
+  assert.match(pwaGuard, /window\.location\.replace/);
+  assert.match(pwaGuard, /posPwaRefresh/);
   assert.match(posViewportQa, /\/pos\?source=pos-pwa/);
   assert.match(posViewportQa, /body\.position === "fixed"/);
   assert.doesNotMatch(posViewportQa, /expected fixed/);

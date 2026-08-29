@@ -6,6 +6,7 @@ import { BUILD_INFO } from "@/generated/build-info";
 const POS_PWA_CACHE_VERSION_KEY = "gamedaygrabs-pos-pwa-cache-version";
 const SERVICE_WORKER_PATH = "/sw.js";
 const APP_CACHE_PREFIX = "poke-radar-sw-";
+const POS_REFRESH_PARAM = "posPwaRefresh";
 
 function isStandalonePwa() {
   const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
@@ -43,6 +44,20 @@ async function clearLegacyPwaCaches() {
   await Promise.all(keys.filter((key) => key.startsWith(APP_CACHE_PREFIX)).map((key) => caches.delete(key)));
 }
 
+function reloadStandalonePos(version: string) {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get(POS_REFRESH_PARAM) === version) return;
+
+  if (url.pathname === "/pos" || url.pathname.startsWith("/pos/")) {
+    url.searchParams.set("source", "pos-pwa");
+    url.searchParams.set(POS_REFRESH_PARAM, version);
+    window.location.replace(`${url.pathname}?${url.searchParams.toString()}${url.hash}`);
+    return;
+  }
+
+  window.location.reload();
+}
+
 export function PosPwaCacheGuard() {
   useEffect(() => {
     if (!isStandalonePwa()) return;
@@ -66,6 +81,7 @@ export function PosPwaCacheGuard() {
 
       if (cancelled) return;
       storageSet(window.localStorage, POS_PWA_CACHE_VERSION_KEY, version);
+      reloadStandalonePos(version);
     })();
 
     return () => {
