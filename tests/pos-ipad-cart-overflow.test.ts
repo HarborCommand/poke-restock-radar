@@ -58,8 +58,9 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(pwaGuard, /navigator\.serviceWorker\.register\(SERVICE_WORKER_PATH, \{ updateViaCache: "none" \}\)/);
   assert.match(pwaGuard, /registration\.active\?\.postMessage\(\{ type: "CLEAR_APP_CACHE" \}\)/);
   assert.match(pwaGuard, /key\.startsWith\(APP_CACHE_PREFIX\)/);
-  assert.match(pwaGuard, /posPwaRefresh/);
-  assert.match(pwaGuard, /window\.location\.replace/);
+  assert.match(pwaGuard, /storageSet\(window\.localStorage, POS_PWA_CACHE_VERSION_KEY, version\)/);
+  assert.doesNotMatch(pwaGuard, /posPwaRefresh/);
+  assert.doesNotMatch(pwaGuard, /window\.location\.replace/);
 
   assert.match(visibleGuard, /const LOCK_ATTRIBUTE = "data-pos-viewport-locked"/);
   assert.match(visibleGuard, /const HOME_SCREEN_ATTRIBUTE = "data-pos-home-screen"/);
@@ -94,7 +95,9 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guard, /const BOTTOM_GAP = 64/);
   assert.match(guard, /window\.visualViewport/);
   assert.match(guard, /function viewportHeight/);
-  assert.match(guard, /return viewport\.height/);
+  assert.match(guard, /function isHomeScreenMode/);
+  assert.match(guard, /: viewport\.height/);
+  assert.match(guard, /Math\.max\(window\.innerHeight, viewport\.height\)/);
   assert.doesNotMatch(guard, /viewport\.offsetTop \+ viewport\.height/);
   assert.match(guard, /root\.dataset\.posSquareFlowMode !== "sale"/);
   assert.match(guard, /workspace\.getBoundingClientRect\(\)\.top/);

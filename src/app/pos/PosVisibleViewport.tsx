@@ -16,7 +16,9 @@ const ALLOWED_SCROLL_SELECTOR = [
 
 function visibleHeight() {
   const viewportHeight = window.visualViewport?.height;
-  const height = Number.isFinite(viewportHeight) && Number(viewportHeight) > 0 ? Number(viewportHeight) : window.innerHeight;
+  const layoutHeight = window.innerHeight;
+  const measuredHeight = Number.isFinite(viewportHeight) && Number(viewportHeight) > 0 ? Number(viewportHeight) : layoutHeight;
+  const height = isHomeScreenMode() ? Math.max(layoutHeight, measuredHeight) : measuredHeight;
   return Math.max(320, Math.round(height));
 }
 

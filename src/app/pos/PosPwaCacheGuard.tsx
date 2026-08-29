@@ -4,7 +4,6 @@ import { useEffect } from "react";
 import { BUILD_INFO } from "@/generated/build-info";
 
 const POS_PWA_CACHE_VERSION_KEY = "gamedaygrabs-pos-pwa-cache-version";
-const POS_PWA_RELOAD_KEY_PREFIX = "gamedaygrabs-pos-pwa-cache-reloaded";
 const SERVICE_WORKER_PATH = "/sw.js";
 const APP_CACHE_PREFIX = "poke-radar-sw-";
 
@@ -25,8 +24,8 @@ function storageSet(storage: Storage, key: string, value: string) {
   try {
     storage.setItem(key, value);
   } catch {
-    // Storage can be unavailable in private browsing. The reload guard still
-    // falls back to the current in-memory app session.
+    // Storage can be unavailable in private browsing. Cache cleanup still runs
+    // in the background without blocking the register screen.
   }
 }
 
@@ -42,16 +41,6 @@ async function clearLegacyPwaCaches() {
   if (!("caches" in window)) return;
   const keys = await caches.keys();
   await Promise.all(keys.filter((key) => key.startsWith(APP_CACHE_PREFIX)).map((key) => caches.delete(key)));
-}
-
-function reloadFreshPos(version: string) {
-  const reloadKey = `${POS_PWA_RELOAD_KEY_PREFIX}:${version}`;
-  if (storageGet(window.sessionStorage, reloadKey) === "true") return;
-  storageSet(window.sessionStorage, reloadKey, "true");
-
-  const url = new URL(window.location.href);
-  url.searchParams.set("posPwaRefresh", version);
-  window.location.replace(url.toString());
 }
 
 export function PosPwaCacheGuard() {
@@ -72,13 +61,11 @@ export function PosPwaCacheGuard() {
         await refreshServiceWorker();
         await clearLegacyPwaCaches();
       } catch {
-        // A failed cache refresh should not block the register. The version
-        // marker prevents repeated reload loops on locked-down iPad sessions.
+        // A failed cache refresh should not block the register.
       }
 
       if (cancelled) return;
       storageSet(window.localStorage, POS_PWA_CACHE_VERSION_KEY, version);
-      reloadFreshPos(version);
     })();
 
     return () => {

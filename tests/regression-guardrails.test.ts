@@ -209,9 +209,13 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(serviceWorker, /fetchFresh\(request, request\.mode === "navigate" \? "\/offline\.html" : null\)/);
   assert.match(pwaGuard, /display-mode: standalone/);
   assert.match(pwaGuard, /CLEAR_APP_CACHE/);
-  assert.match(pwaGuard, /window\.location\.replace/);
+  assert.match(pwaGuard, /storageSet\(window\.localStorage, POS_PWA_CACHE_VERSION_KEY, version\)/);
+  assert.doesNotMatch(pwaGuard, /window\.location\.replace/);
+  assert.doesNotMatch(pwaGuard, /posPwaRefresh/);
   assert.match(saleViewportGuard, /function viewportHeight/);
-  assert.match(saleViewportGuard, /return viewport\.height/);
+  assert.match(saleViewportGuard, /function isHomeScreenMode/);
+  assert.match(saleViewportGuard, /: viewport\.height/);
+  assert.match(saleViewportGuard, /Math\.max\(window\.innerHeight, viewport\.height\)/);
   assert.doesNotMatch(saleViewportGuard, /viewport\.offsetTop \+ viewport\.height/);
   assert.match(flow, /data\.posSquareFlowMode = mode/);
   assert.match(flow, /setMode\("payment"\)/);

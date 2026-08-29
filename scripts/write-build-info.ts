@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const outputPath = join(root, "src", "generated", "build-info.ts");
-const serviceWorkerVersion = "poke-radar-sw-2026-08-29-pos-install-v8";
+const serviceWorkerVersion = "poke-radar-sw-2026-08-29-pos-install-v9";
 
 function envValue(name: string) {
   const value = process.env[name]?.trim();
