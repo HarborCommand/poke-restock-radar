@@ -30,6 +30,7 @@ test("iPad POS cart keeps variable content inside explicit scroll and grid bound
 
 test("iPad POS sale screen keeps the Charge footer inside the visible viewport", () => {
   const layout = readFileSync(path.join(root, "src/app/pos/layout.tsx"), "utf8");
+  const manifest = readFileSync(path.join(root, "public/manifest-pos.webmanifest"), "utf8");
   const flow = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.tsx"), "utf8");
   const flowCss = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.module.css"), "utf8");
   const guard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
@@ -49,6 +50,10 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
 
   assert.match(pwaGuard, /display-mode: standalone/);
   assert.match(pwaGuard, /navigatorWithStandalone\.standalone/);
+  assert.match(layout, /"apple-mobile-web-app-capable": "yes"/);
+  assert.match(manifest, /"start_url": "\/pos\?source=pos-pwa"/);
+  assert.match(manifest, /"scope": "\/pos"/);
+  assert.match(manifest, /"display_override": \["standalone"\]/);
   assert.match(pwaGuard, /BUILD_INFO\.serviceWorkerVersion/);
   assert.match(pwaGuard, /navigator\.serviceWorker\.register\(SERVICE_WORKER_PATH, \{ updateViaCache: "none" \}\)/);
   assert.match(pwaGuard, /registration\.active\?\.postMessage\(\{ type: "CLEAR_APP_CACHE" \}\)/);

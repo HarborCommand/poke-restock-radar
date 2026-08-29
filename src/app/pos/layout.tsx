@@ -34,6 +34,9 @@ export const metadata: Metadata = {
     capable: true,
     title: "GameDayGrabs POS",
     statusBarStyle: "black-translucent"
+  },
+  other: {
+    "apple-mobile-web-app-capable": "yes"
   }
 };
 
