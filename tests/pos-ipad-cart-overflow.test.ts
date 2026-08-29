@@ -28,12 +28,24 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   const flow = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.tsx"), "utf8");
   const flowCss = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.module.css"), "utf8");
   const guard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
+  const visibleGuard = readFileSync(path.join(root, "src/app/pos/PosVisibleViewport.tsx"), "utf8");
   const guardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
 
   assert.match(layout, /import \{ PosSaleViewportGuard \} from "\.\/PosSaleViewportGuard"/);
   assert.match(layout, /import saleViewportGuardStyles from "\.\/pos-sale-viewport-guard\.module\.css"/);
   assert.match(layout, /cartTitleLayoutStyles\.cartTitleLayout\} \$\{saleViewportGuardStyles\.saleViewportGuard\}/);
+  assert.match(layout, /<PosVisibleViewport \/>[\s\S]*<PosSaleViewportGuard \/>/);
   assert.match(layout, /<PosSaleViewportGuard \/>[\s\S]*<PosRegisterShell>\{children\}<\/PosRegisterShell>/);
+
+  assert.match(visibleGuard, /const LOCK_ATTRIBUTE = "data-pos-viewport-locked"/);
+  assert.match(visibleGuard, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]/);
+  assert.match(visibleGuard, /root\.setAttribute\(LOCK_ATTRIBUTE, "true"\)/);
+  assert.match(visibleGuard, /body\.setAttribute\(LOCK_ATTRIBUTE, "true"\)/);
+  assert.match(visibleGuard, /window\.scrollTo\(0, 0\)/);
+  assert.match(visibleGuard, /new MutationObserver\(sync\)/);
+  assert.match(visibleGuard, /attributeFilter: \["class", "data-pos-authenticated", "data-pos-register-view"\]/);
+  assert.match(visibleGuard, /window\.addEventListener\("scroll", sync/);
+  assert.match(visibleGuard, /setViewportLock\(false\)/);
 
   assert.match(guard, /const CSS_VARIABLE = "--pos-sale-visible-height"/);
   assert.match(guard, /const MIN_PANEL_HEIGHT = 320/);
@@ -48,6 +60,14 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guard, /window\.visualViewport\?\.addEventListener\("scroll", sync/);
 
   assert.match(guardCss, /Final sale-screen viewport boundary/);
+  assert.match(guardCss, /html\[data-pos-viewport-locked="true"\]/);
+  assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]/);
+  assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: fixed !important/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.app-main\)[\s\S]*height: var\(--pos-visible-height, 100dvh\) !important/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.app-main\)[\s\S]*overflow: hidden !important/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.pos-page\)/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.pos-workspace\)[\s\S]*overflow: hidden !important/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\[data-pos-square-flow-mode="sale"\] \.pos-search-panel\)[\s\S]*overflow-y: auto !important/);
   assert.match(guardCss, /data-pos-authenticated="true"\]\[data-pos-square-flow-mode="sale"\] \.pos-cart-panel/);
   assert.match(guardCss, /height: var\(--pos-sale-visible-height, 100%\) !important/);
   assert.match(guardCss, /max-height: var\(--pos-sale-visible-height, 100%\) !important/);
