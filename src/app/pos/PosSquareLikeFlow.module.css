@@ -1,7 +1,8 @@
 /*
  * Square-style register flow.
  *
- * Sale screen: the Current Sale panel scrolls beneath a fixed Charge action.
+ * Sale screen: the product and cart item panes scroll independently, with
+ * Charge kept in a reserved footer lane.
  * Customer and payment are focused screens that reuse the existing POS
  * controls/business logic instead of placing them below an ever-growing cart.
  */
@@ -12,13 +13,13 @@
   height: 100% !important;
   min-height: 0 !important;
   max-height: 100% !important;
-  overflow-y: auto !important;
+  overflow: hidden !important;
   overflow-x: hidden !important;
   overscroll-behavior-y: contain !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  padding-bottom: max(204px, calc(env(safe-area-inset-bottom) + 184px)) !important;
-  scroll-padding-bottom: max(204px, calc(env(safe-area-inset-bottom) + 184px)) !important;
+  padding-bottom: max(10px, calc(env(safe-area-inset-bottom) + 8px)) !important;
+  scroll-padding-bottom: max(86px, calc(env(safe-area-inset-bottom) + 78px)) !important;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-header) {
@@ -61,17 +62,22 @@
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
-  flex: 0 0 auto !important;
+  flex: 1 1 auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  overflow: visible !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
   touch-action: pan-y;
   padding-right: 0 !important;
-  padding-bottom: 0 !important;
+  padding-bottom: max(12px, calc(env(safe-area-inset-bottom) + 6px)) !important;
+  -webkit-overflow-scrolling: touch;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines.is-empty) {
-  flex: 0 0 90px !important;
+  flex: 1 1 auto !important;
+  overflow: hidden !important;
+  padding-bottom: 0 !important;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-tax-profile-card),
@@ -83,16 +89,21 @@
 }
 
 .chargeBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 12;
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
   align-items: center;
   gap: 10px;
+  width: 100%;
   margin-top: 8px;
   border-top: 1px solid #dedbd7;
   background: #ffffff;
   padding-top: 12px;
   padding-bottom: max(0px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .saleSummary {
