@@ -81,6 +81,9 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guard, /window\.visualViewport\?\.addEventListener\("scroll", sync/);
 
   assert.match(guardCss, /Final sale-screen viewport boundary/);
+  assert.match(guardCss, /\.saleViewportGuard \{[\s\S]*height: var\(--pos-visible-height, 100dvh\)/);
+  assert.match(guardCss, /\.saleViewportGuard \{[\s\S]*max-height: var\(--pos-visible-height, 100dvh\)/);
+  assert.match(guardCss, /\.saleViewportGuard \{[\s\S]*overflow: hidden/);
   assert.match(guardCss, /html\[data-pos-viewport-locked="true"\]/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: fixed !important/);
