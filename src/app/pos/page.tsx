@@ -522,7 +522,7 @@ export default function PosStoreModePage() {
   }
 
   return (
-    <div className={styles.storeMode}>
+    <div className={styles.storeMode} data-pos-store-mode="true">
       <div className={styles.storeActions}>
         {isAdmin ? (
           <>

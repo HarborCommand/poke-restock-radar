@@ -141,6 +141,7 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(layout, /overflowStyles\.cartOverflowFix/);
   assert.match(shell, /"checkout".*"products".*"customers".*"sales"/s);
   assert.match(shell, /data-pos-authenticated=\{user \? "true" : "false"\}/);
+  assert.match(shell, /data-pos-checkout-host=\{user \? "true" : undefined\}/);
   assert.match(shell, /gamedaygrabs-pos-square-pending-v1/);
   assert.match(shell, /Finish or cancel the current Square payment before leaving Checkout/);
   assert.match(shell, /url\.searchParams\.has\("data"\)/);
@@ -151,15 +152,19 @@ test("POS register shell preserves checkout safeguards and keeps browse views re
   assert.match(presentation, /querySelectorAll\("\.pos-cart-lines > \.pos-cart-line"\)\.length/);
   assert.doesNotMatch(presentation, /cartCountFromHeading/);
   assert.doesNotMatch(presentation, /fetch\(|\/api\//);
-  assert.match(overflowCss, /\.pos-cart-panel\)[\s\S]*overflow-y: auto !important/);
-  assert.match(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow: visible !important/);
+  assert.match(overflowCss, /\.pos-cart-panel\)[\s\S]*display: flex !important/);
+  assert.match(overflowCss, /\.pos-cart-panel\)[\s\S]*overflow: hidden !important/);
+  assert.match(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*flex: 1 1 auto !important/);
+  assert.match(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow-y: auto !important/);
+  assert.doesNotMatch(overflowCss, /Current Sale uses ONE vertical scroll surface/);
+  assert.doesNotMatch(overflowCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow: visible !important/);
   assert.match(overflowCss, /grid-template-columns: 48px minmax\(0, 1fr\) 108px 34px !important/);
   assert.match(overflowCss, /> \.pos-cart-line-copy/);
   assert.match(overflowCss, /> \.pos-cart-quantity/);
   assert.match(overflowCss, /> \.pos-line-total/);
   assert.match(overflowCss, /> \.icon-button\.small/);
   assert.match(overflowCss, /\.pos-customer-results/);
-  assert.match(overflowCss, /\.pos-cart-header[\s\S]*position: sticky !important/);
+  assert.match(overflowCss, /\.pos-cart-header[\s\S]*position: relative !important/);
   assert.match(overflowCss, /\.pos-search-panel[\s\S]*overflow: hidden !important/);
   assert.match(overflowCss, /\.pos-result-grid[\s\S]*overflow-y: auto !important/);
   assert.match(overflowCss, /-webkit-overflow-scrolling: touch/);
@@ -178,9 +183,13 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   const layout = readFileSync(path.join(root, "src/app/pos/layout.tsx"), "utf8");
   const flow = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.tsx"), "utf8");
   const flowCss = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.module.css"), "utf8");
+  const page = readFileSync(path.join(root, "src/app/pos/page.tsx"), "utf8");
+  const storeModeCss = readFileSync(path.join(root, "src/app/pos/pos-store-mode.module.css"), "utf8");
+  const saleViewportGuard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
   const saleViewportGuardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
 
   assert.match(layout, /<PosSquareLikeFlow \/>/);
+  assert.match(page, /data-pos-store-mode="true"/);
   assert.match(flow, /data\.posSquareFlowMode = mode/);
   assert.match(flow, /setMode\("payment"\)/);
   assert.match(flow, /setMode\("customer"\)/);
@@ -192,7 +201,7 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(flow, /"--pos-checkout-dock-right"/);
   assert.match(flow, /"--pos-checkout-dock-width"/);
   assert.match(flow, /style=\{floatingActionStyle\}/);
-  assert.match(flow, /aria-label="Pinned checkout action"/);
+  assert.doesNotMatch(flow, /aria-label="Pinned checkout action"/);
   assert.match(flow, /aria-label="Pinned complete sale action"/);
   assert.match(flow, /completeButtonIsDisabled/);
   assert.match(flowCss, /data-pos-square-flow-mode="sale"[\s\S]*\.pos-cart-panel[\s\S]*overflow: hidden !important/);
@@ -208,6 +217,9 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(saleViewportGuardCss, /\.pos-search-panel\)[\s\S]*display: flex !important/);
   assert.match(saleViewportGuardCss, /\.pos-result-grid\)[\s\S]*overflow-y: auto !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel\)[\s\S]*overflow: hidden !important/);
+  assert.match(saleViewportGuardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*overflow: hidden !important/);
+  assert.match(saleViewportGuardCss, /\[data-pos-checkout-host="true"\][\s\S]*overflow: hidden !important/);
+  assert.match(saleViewportGuardCss, /\[data-pos-store-mode="true"\][\s\S]*overflow: hidden !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*flex: 1 1 auto !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow-y: auto !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*position: sticky !important/);
@@ -219,6 +231,16 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(saleViewportGuardCss, /\.pos-cart-line\)[\s\S]*grid-template-rows: minmax\(52px, auto\) minmax\(64px, auto\) auto !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-line\)[\s\S]*overflow: visible !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-line > \.pos-cart-line-copy\)[\s\S]*overflow: visible !important/);
+  assert.match(saleViewportGuard, /const WORKSPACE_VARIABLE = "--pos-sale-workspace-height"/);
+  assert.match(saleViewportGuard, /const ROOT_VARIABLE = "--pos-sale-root-height"/);
+  assert.match(saleViewportGuard, /const BOTTOM_GAP = 64/);
+  assert.match(saleViewportGuard, /workspace\.style\.setProperty\(WORKSPACE_VARIABLE/);
+  assert.match(saleViewportGuardCss, /Last-word iPad app frame/);
+  assert.match(saleViewportGuardCss, /height: var\(--pos-sale-workspace-height, 100%\) !important/);
+  assert.match(storeModeCss, /\.storeMode[\s\S]*height: 100%/);
+  assert.match(storeModeCss, /\.storeMode :global\(\.app-main\)[\s\S]*overflow: hidden !important/);
+  assert.match(storeModeCss, /\.storeMode :global\(\.pos-cart-panel\)[\s\S]*position: relative !important/);
+  assert.doesNotMatch(storeModeCss, /\.storeMode :global\(\.pos-cart-panel\)[\s\S]*position: sticky !important/);
 });
 
 test("core safety regression suites remain part of the default test command", () => {

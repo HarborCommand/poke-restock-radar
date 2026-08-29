@@ -255,6 +255,7 @@ export function PosRegisterShell({ children }: { children: ReactNode }) {
       <div
         ref={checkoutRef}
         className={user && view !== "checkout" ? `${styles.checkoutHost} ${styles.checkoutHidden}` : user ? styles.checkoutHost : undefined}
+        data-pos-checkout-host={user ? "true" : undefined}
         aria-hidden={Boolean(user && view !== "checkout")}
       >
         {children}

@@ -100,7 +100,7 @@ async function launchBrowser() {
 async function loginCookies() {
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: baseUrl, "sec-fetch-site": "same-origin" },
     body: JSON.stringify({ email, password })
   });
   const bodyText = await response.text();

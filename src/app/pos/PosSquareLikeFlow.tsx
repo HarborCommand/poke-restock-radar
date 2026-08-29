@@ -2,7 +2,7 @@
 
 import { Check, ChevronLeft, CreditCard, UserRound } from "lucide-react";
 import { createPortal } from "react-dom";
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import feedbackStyles from "./PosCustomerAttachFeedback.module.css";
 import styles from "./PosSquareLikeFlow.module.css";
 
@@ -145,8 +145,6 @@ export function PosSquareLikeFlow() {
   const [mode, setMode] = useState<FlowMode>("sale");
   const [cartPanel, setCartPanel] = useState<HTMLElement | null>(null);
   const [cartHeader, setCartHeader] = useState<HTMLElement | null>(null);
-  const [saleAction, setSaleAction] = useState<HTMLElement | null>(null);
-  const [saleActionVisible, setSaleActionVisible] = useState(true);
   const [completeButton, setCompleteButton] = useState<HTMLButtonElement | null>(null);
   const [completeButtonLabel, setCompleteButtonLabel] = useState("Complete Sale");
   const [completeButtonDisabled, setCompleteButtonDisabled] = useState(true);
@@ -156,10 +154,6 @@ export function PosSquareLikeFlow() {
   const [totalCents, setTotalCents] = useState(0);
   const [attachedCustomerName, setAttachedCustomerName] = useState<string | null>(null);
   const [customerToast, setCustomerToast] = useState<string | null>(null);
-
-  const setSaleActionNode = useCallback((node: HTMLDivElement | null) => {
-    setSaleAction((current) => (current === node ? current : node));
-  }, []);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -264,10 +258,8 @@ export function PosSquareLikeFlow() {
     const syncVisibility = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
-        const nextSaleVisible = mode !== "sale" || elementIsCheckoutVisible(saleAction);
         const nextCompleteVisible = mode !== "payment" || elementIsCheckoutVisible(completeButton);
         const nextFloatingActionStyle = floatingDockStyleForCartPanel(cartPanel);
-        setSaleActionVisible((current) => (current === nextSaleVisible ? current : nextSaleVisible));
         setCompleteButtonVisible((current) => (current === nextCompleteVisible ? current : nextCompleteVisible));
         setFloatingActionStyle((current) =>
           sameFloatingActionStyle(current, nextFloatingActionStyle) ? current : nextFloatingActionStyle
@@ -298,7 +290,7 @@ export function PosSquareLikeFlow() {
       window.visualViewport?.removeEventListener("resize", syncVisibility);
       window.visualViewport?.removeEventListener("scroll", syncVisibility);
     };
-  }, [cartPanel, completeButton, mode, saleAction]);
+  }, [cartPanel, completeButton, mode]);
 
   useEffect(() => {
     if (!cartPanel || mode !== "customer") return;
@@ -382,7 +374,6 @@ export function PosSquareLikeFlow() {
 
   const chargeDisabled = cartCount <= 0 || totalCents <= 0;
   const customerAttached = Boolean(attachedCustomerName);
-  const showPinnedCharge = mode === "sale" && cartCount > 0 && !saleActionVisible;
   const showPinnedComplete = mode === "payment" && cartCount > 0 && !completeButtonVisible;
 
   return (
@@ -428,27 +419,6 @@ export function PosSquareLikeFlow() {
           )
         : null}
 
-      {showPinnedCharge
-        ? createPortal(
-            <div className={styles.floatingActionDock} style={floatingActionStyle} aria-label="Pinned checkout action">
-              <div className={styles.floatingSummary}>
-                <span>{cartCount === 1 ? "1 item" : `${cartCount} items`}</span>
-                <strong>{moneyFromCents(totalCents)}</strong>
-              </div>
-              <button
-                className={styles.floatingChargeButton}
-                type="button"
-                disabled={chargeDisabled}
-                onClick={() => setMode("payment")}
-              >
-                <CreditCard size={19} aria-hidden="true" />
-                <span>Charge {moneyFromCents(totalCents)}</span>
-              </button>
-            </div>,
-            document.body
-          )
-        : null}
-
       {showPinnedComplete
         ? createPortal(
             <div
@@ -474,9 +444,7 @@ export function PosSquareLikeFlow() {
         <>
           {mode === "sale" ? (
             <div
-              ref={setSaleActionNode}
               className={styles.chargeBar}
-              style={floatingActionStyle}
               aria-label="Checkout action"
             >
               <div className={styles.saleSummary}>

@@ -29,37 +29,47 @@
 
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-panel) {
   align-self: stretch !important;
+  display: flex !important;
+  flex-direction: column !important;
   height: 100% !important;
   min-height: 0 !important;
   max-height: 100% !important;
-  overflow-y: auto !important;
+  overflow: hidden !important;
+  overflow-y: hidden !important;
   overflow-x: hidden !important;
   overscroll-behavior-y: contain !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   box-sizing: border-box !important;
-  padding-bottom: max(64px, calc(env(safe-area-inset-bottom) + 44px)) !important;
+  padding-bottom: max(14px, calc(env(safe-area-inset-bottom) + 12px)) !important;
   scroll-padding-top: 72px;
-  scroll-padding-bottom: max(76px, calc(env(safe-area-inset-bottom) + 52px));
+  scroll-padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 84px));
 }
 
 /*
- * Current Sale uses ONE vertical scroll surface: the cart panel itself.
- * Nested scrolling in the item list trapped iPad gestures and made payment
- * controls below the customer card feel frozen. Let every sale section flow
- * naturally so a single swipe can always reach payment and Complete Sale.
+ * Current Sale has one fixed frame. The line list is the scroll surface and
+ * the Charge action owns the footer lane, so adding more products never drags
+ * the whole POS canvas upward.
  */
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines),
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines:not(.is-empty)) {
-  flex: 0 0 auto !important;
+  flex: 1 1 auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  overflow: visible !important;
-  padding-right: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  padding-right: 2px !important;
+  padding-bottom: max(12px, calc(env(safe-area-inset-bottom) + 6px)) !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-lines.is-empty) {
+  flex: 1 1 auto !important;
   min-height: 90px !important;
+  overflow: hidden !important;
+  padding-bottom: 0 !important;
 }
 
 /*
@@ -191,15 +201,16 @@
   touch-action: pan-y;
 }
 
-/* Keep the sale identity visible while the single checkout surface scrolls. */
+/* Keep the sale identity visible while the item list scrolls below it. */
 .cartOverflowFix :global([data-pos-authenticated="true"] .pos-cart-header) {
-  position: sticky !important;
-  top: -16px !important;
+  position: relative !important;
+  top: auto !important;
   z-index: 8 !important;
-  margin: -16px -16px 4px !important;
+  flex: 0 0 auto !important;
+  margin: 0 0 4px !important;
   border-bottom: 1px solid #f0efed;
   background: #ffffff !important;
-  padding: 16px 16px 12px !important;
+  padding: 0 0 12px !important;
 }
 
 /*
@@ -218,6 +229,9 @@
   .cartOverflowFix :global([data-pos-authenticated="true"] .pos-register-sale-heading),
   .cartOverflowFix :global([data-pos-authenticated="true"] .pos-scan-row),
   .cartOverflowFix :global([data-pos-authenticated="true"] .pos-filter-row),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-inventory-status),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-view-row),
+  .cartOverflowFix :global([data-pos-authenticated="true"] .pos-results-heading),
   .cartOverflowFix :global([data-pos-authenticated="true"] .pos-load-more) {
     flex: 0 0 auto !important;
   }

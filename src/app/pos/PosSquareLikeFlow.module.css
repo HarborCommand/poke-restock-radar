@@ -99,6 +99,7 @@
   gap: 10px;
   width: 100%;
   margin-top: 8px;
+  margin-bottom: max(2px, env(safe-area-inset-bottom));
   border-top: 1px solid #dedbd7;
   background: #ffffff;
   padding-top: 12px;

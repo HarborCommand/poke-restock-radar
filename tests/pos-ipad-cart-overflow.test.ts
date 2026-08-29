@@ -12,8 +12,13 @@ test("iPad POS cart keeps variable content inside explicit scroll and grid bound
 
   assert.match(layout, /pos-ipad-cart-overflow\.module\.css/);
   assert.match(layout, /overflowStyles\.cartOverflowFix/);
+  assert.match(css, /\.pos-cart-panel\)[\s\S]*display: flex !important/);
+  assert.match(css, /\.pos-cart-panel\)[\s\S]*overflow: hidden !important/);
   assert.match(css, /\.pos-cart-lines:not\(\.is-empty\)/);
-  assert.match(css, /overflow-y: auto !important/);
+  assert.match(css, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*flex: 1 1 auto !important/);
+  assert.match(css, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow-y: auto !important/);
+  assert.doesNotMatch(css, /Current Sale uses ONE vertical scroll surface/);
+  assert.doesNotMatch(css, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow: visible !important/);
   assert.match(css, /grid-template-columns: 48px minmax\(0, 1fr\) 108px 34px !important/);
   assert.match(css, /> \.pos-cart-line-copy/);
   assert.match(css, /> \.pos-cart-quantity/);
@@ -28,6 +33,8 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   const flow = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.tsx"), "utf8");
   const flowCss = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.module.css"), "utf8");
   const guard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
+  const page = readFileSync(path.join(root, "src/app/pos/page.tsx"), "utf8");
+  const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
   const visibleGuard = readFileSync(path.join(root, "src/app/pos/PosVisibleViewport.tsx"), "utf8");
   const guardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
 
@@ -38,6 +45,12 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(layout, /<PosSaleViewportGuard \/>[\s\S]*<PosRegisterShell>\{children\}<\/PosRegisterShell>/);
 
   assert.match(visibleGuard, /const LOCK_ATTRIBUTE = "data-pos-viewport-locked"/);
+  assert.match(visibleGuard, /const ALLOWED_SCROLL_SELECTOR/);
+  assert.match(visibleGuard, /\.pos-result-grid/);
+  assert.match(visibleGuard, /\.pos-cart-lines:not\(\.is-empty\)/);
+  assert.match(visibleGuard, /document\.addEventListener\("touchmove", lockBodyTouch, \{ passive: false \}\)/);
+  assert.match(visibleGuard, /closestAllowedScroller/);
+  assert.match(visibleGuard, /event\.preventDefault\(\)/);
   assert.match(visibleGuard, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]/);
   assert.match(visibleGuard, /root\.setAttribute\(LOCK_ATTRIBUTE, "true"\)/);
   assert.match(visibleGuard, /body\.setAttribute\(LOCK_ATTRIBUTE, "true"\)/);
@@ -48,14 +61,22 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(visibleGuard, /setViewportLock\(false\)/);
 
   assert.match(guard, /const CSS_VARIABLE = "--pos-sale-visible-height"/);
+  assert.match(guard, /const WORKSPACE_VARIABLE = "--pos-sale-workspace-height"/);
+  assert.match(guard, /const ROOT_VARIABLE = "--pos-sale-root-height"/);
   assert.match(guard, /const MIN_PANEL_HEIGHT = 320/);
-  assert.match(guard, /const BOTTOM_GAP = 14/);
+  assert.match(guard, /const MIN_WORKSPACE_HEIGHT = 420/);
+  assert.match(page, /data-pos-store-mode="true"/);
+  assert.match(shell, /data-pos-checkout-host=\{user \? "true" : undefined\}/);
+
+  assert.match(guard, /const BOTTOM_GAP = 64/);
   assert.match(guard, /window\.visualViewport/);
   assert.match(guard, /viewport\.offsetTop \+ viewport\.height/);
   assert.match(guard, /root\.dataset\.posSquareFlowMode !== "sale"/);
+  assert.match(guard, /workspace\.getBoundingClientRect\(\)\.top/);
   assert.match(guard, /panel\.getBoundingClientRect\(\)\.top/);
-  assert.match(guard, /viewportBottom\(\) - top - BOTTOM_GAP/);
-  assert.match(guard, /panel\.style\.setProperty\(CSS_VARIABLE, `\$\{available\}px`\)/);
+  assert.match(guard, /root\.style\.setProperty\(ROOT_VARIABLE/);
+  assert.match(guard, /workspace\.style\.setProperty\(WORKSPACE_VARIABLE/);
+  assert.match(guard, /panel\.style\.setProperty\(CSS_VARIABLE/);
   assert.match(guard, /window\.visualViewport\?\.addEventListener\("resize", sync/);
   assert.match(guard, /window\.visualViewport\?\.addEventListener\("scroll", sync/);
 
@@ -63,10 +84,20 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /html\[data-pos-viewport-locked="true"\]/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: fixed !important/);
-  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.app-main\)[\s\S]*height: var\(--pos-visible-height, 100dvh\) !important/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*height: var\(--pos-sale-root-height, var\(--pos-visible-height, 100dvh\)\) !important/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*overflow: hidden !important/);
+  assert.match(guardCss, /\[data-pos-checkout-host="true"\][\s\S]*height: 100% !important/);
+  assert.match(guardCss, /\[data-pos-store-mode="true"\][\s\S]*height: 100% !important/);
+  assert.match(guardCss, /\[data-pos-store-mode="true"\] \.app-shell\)[\s\S]*overflow: hidden !important/);
+  assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.app-main\)[\s\S]*height: var\(--pos-sale-root-height, var\(--pos-visible-height, 100dvh\)\) !important/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.app-main\)[\s\S]*overflow: hidden !important/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.pos-page\)/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\] \.pos-workspace\)[\s\S]*overflow: hidden !important/);
+  assert.match(guardCss, /height: var\(--pos-sale-workspace-height, 100%\) !important/);
+  assert.match(guardCss, /Last-word iPad app frame/);
+  assert.match(guardCss, /\.saleViewportGuard\.saleViewportGuard[\s\S]*\[data-pos-store-mode="true"\] \.app-main/);
+  assert.match(guardCss, /\.saleViewportGuard\.saleViewportGuard[\s\S]*\[data-pos-square-flow-mode="sale"\] \.pos-workspace/);
+  assert.match(guardCss, /\.saleViewportGuard\.saleViewportGuard[\s\S]*\.pos-cart-panel > \[aria-label="Checkout action"\]/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\[data-pos-square-flow-mode="sale"\] \.pos-search-panel\)[\s\S]*display: flex !important/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\[data-pos-square-flow-mode="sale"\] \.pos-search-panel\)[\s\S]*overflow: hidden !important/);
   assert.match(guardCss, /\.pos-result-grid\)[\s\S]*flex: 1 1 auto !important/);
@@ -79,7 +110,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*overflow: hidden !important/);
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*-webkit-overflow-scrolling: touch/);
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*touch-action: pan-y/);
-  assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*padding-bottom: max\(10px/);
+  assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*padding-bottom: max\(14px/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*flex: 1 1 auto !important/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow-y: auto !important/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*-webkit-overflow-scrolling: touch/);
@@ -113,7 +144,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(flow, /"--pos-checkout-dock-right"/);
   assert.match(flow, /"--pos-checkout-dock-width"/);
   assert.match(flow, /"--pos-checkout-dock-transform"/);
-  assert.match(flow, /aria-label="Pinned checkout action"/);
+  assert.doesNotMatch(flow, /aria-label="Pinned checkout action"/);
   assert.match(flow, /aria-label="Pinned complete sale action"/);
   assert.match(flow, /completeButtonIsDisabled/);
   assert.match(flow, /button\.click\(\)/);

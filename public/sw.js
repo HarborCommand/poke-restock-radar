@@ -1,4 +1,4 @@
-const CACHE_NAME = "poke-radar-sw-2026-08-29-pos-app-scroll-v1";
+const CACHE_NAME = "poke-radar-sw-2026-08-29-pos-app-scroll-v3";
 const OFFLINE_ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",

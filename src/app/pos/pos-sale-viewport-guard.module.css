@@ -24,21 +24,51 @@
   margin: 0 !important;
 }
 
-.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] .app-main) {
-  height: var(--pos-visible-height, 100dvh) !important;
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"]) {
+  width: 100% !important;
+  height: var(--pos-sale-root-height, var(--pos-visible-height, 100dvh)) !important;
   min-height: 0 !important;
-  max-height: var(--pos-visible-height, 100dvh) !important;
+  max-height: var(--pos-sale-root-height, var(--pos-visible-height, 100dvh)) !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+.saleViewportGuard :global([data-pos-checkout-host="true"]),
+.saleViewportGuard :global([data-pos-store-mode="true"]) {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+.saleViewportGuard :global([data-pos-store-mode="true"] .app-shell) {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] .app-main) {
+  height: var(--pos-sale-root-height, var(--pos-visible-height, 100dvh)) !important;
+  min-height: 0 !important;
+  max-height: var(--pos-sale-root-height, var(--pos-visible-height, 100dvh)) !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
 }
 
 .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] .pos-page),
 .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] .pos-workspace) {
-  height: 100% !important;
+  height: var(--pos-sale-workspace-height, 100%) !important;
   min-height: 0 !important;
-  max-height: 100% !important;
+  max-height: var(--pos-sale-workspace-height, 100%) !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
+}
+
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] .pos-workspace) {
+  align-items: stretch !important;
 }
 
 .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-search-panel) {
@@ -56,7 +86,11 @@
 
 .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-register-sale-heading),
 .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-scan-row),
-.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-filter-row) {
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-filter-row),
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-inventory-status),
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-view-row),
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-results-heading),
+.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-load-more) {
   flex: 0 0 auto !important;
   min-height: 0 !important;
 }
@@ -87,6 +121,9 @@
   height: var(--pos-sale-visible-height, 100%) !important;
   min-height: 0 !important;
   max-height: var(--pos-sale-visible-height, 100%) !important;
+  position: relative !important;
+  top: auto !important;
+  align-self: stretch !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
@@ -95,8 +132,8 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   box-sizing: border-box !important;
-  padding-bottom: max(10px, calc(env(safe-area-inset-bottom) + 8px)) !important;
-  scroll-padding-bottom: max(86px, calc(env(safe-area-inset-bottom) + 78px)) !important;
+  padding-bottom: max(14px, calc(env(safe-area-inset-bottom) + 12px)) !important;
+  scroll-padding-bottom: max(92px, calc(env(safe-area-inset-bottom) + 84px)) !important;
 }
 
 .saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
@@ -158,6 +195,7 @@
   min-height: 66px !important;
   flex: 0 0 auto !important;
   margin-top: 8px !important;
+  margin-bottom: max(2px, env(safe-area-inset-bottom)) !important;
   transform: none !important;
   border: 1px solid rgba(60, 60, 67, 0.16) !important;
   border-radius: 18px !important;
@@ -171,7 +209,8 @@
   .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-workspace) {
     grid-template-columns: minmax(0, 1fr) minmax(320px, 0.82fr) !important;
     gap: 12px !important;
-    height: 100% !important;
+    height: var(--pos-sale-workspace-height, 100%) !important;
+    max-height: var(--pos-sale-workspace-height, 100%) !important;
     overflow: hidden !important;
   }
 
@@ -185,7 +224,8 @@
     grid-template-columns: 1fr !important;
     grid-template-rows: minmax(0, 1fr) minmax(300px, 46%) !important;
     gap: 10px !important;
-    height: 100% !important;
+    height: var(--pos-sale-workspace-height, 100%) !important;
+    max-height: var(--pos-sale-workspace-height, 100%) !important;
     overflow: hidden !important;
   }
 
@@ -198,4 +238,61 @@
   .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-result-grid) {
     grid-template-columns: 1fr !important;
   }
+}
+
+/*
+ * Last-word iPad app frame. These duplicate the local class on purpose so this
+ * layer beats earlier POS modules that used sticky cart/page scrolling.
+ */
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"]),
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] [data-pos-checkout-host="true"]),
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] [data-pos-store-mode="true"]),
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] [data-pos-store-mode="true"] .app-shell),
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] [data-pos-store-mode="true"] .app-main),
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] [data-pos-store-mode="true"] .pos-page) {
+  min-height: 0 !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"] [data-pos-store-mode="true"] .app-main) {
+  height: var(--pos-sale-root-height, var(--pos-visible-height, 100dvh)) !important;
+  max-height: var(--pos-sale-root-height, var(--pos-visible-height, 100dvh)) !important;
+  box-sizing: border-box !important;
+}
+
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-workspace) {
+  height: var(--pos-sale-workspace-height, 100%) !important;
+  max-height: var(--pos-sale-workspace-height, 100%) !important;
+  min-height: 0 !important;
+  align-items: stretch !important;
+  overflow: hidden !important;
+}
+
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-search-panel),
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel) {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  align-self: stretch !important;
+  overflow: hidden !important;
+}
+
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-result-grid),
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.saleViewportGuard.saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel > [aria-label="Checkout action"]) {
+  flex: 0 0 auto !important;
+  position: sticky !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  transform: none !important;
 }
