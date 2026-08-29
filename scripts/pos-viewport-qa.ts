@@ -104,7 +104,7 @@ async function openPos(browser: Browser, viewport: (typeof viewports)[number], c
     if (["error", "warning"].includes(message.type())) consoleMessages.push(`${message.type()}: ${message.text()}`);
   });
   page.on("pageerror", (error) => consoleMessages.push(`pageerror: ${error.message}`));
-  await page.goto(`${origin}/pos`, { waitUntil: "networkidle" });
+  await page.goto(`${origin}/pos?source=pos-pwa`, { waitUntil: "networkidle" });
   await page.waitForSelector('[data-pos-register-view="checkout"][data-pos-authenticated="true"]', { timeout: 15_000 });
   await page.waitForSelector(".pos-product-card", { timeout: 15_000 });
   return { context, page, consoleMessages };
@@ -204,7 +204,7 @@ function assertPosLayout(label: string, result: Awaited<ReturnType<typeof measur
   const failures: string[] = [];
   if (result.lock.html !== "true" || result.lock.body !== "true") failures.push("page viewport lock is not active");
   if (result.lock.scrollY !== 0) failures.push(`window scrolled to ${result.lock.scrollY}`);
-  if (result.body.position !== "fixed") failures.push(`body is ${result.body.position}, expected fixed`);
+  if (result.body.position === "fixed") failures.push("body is fixed; Home Screen POS can snap back like a cropped app image");
   if (result.body.overflowY !== "hidden") failures.push(`body overflow-y is ${result.body.overflowY}, expected hidden`);
   if (!result.productGrid || result.productGrid.overflowY !== "auto") failures.push("product grid is not the product scroll pane");
   if (!result.cartPanel || result.cartPanel.overflowY !== "hidden") failures.push("cart panel is scrolling instead of framing current sale");

@@ -36,6 +36,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   const guard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
   const pwaGuard = readFileSync(path.join(root, "src/app/pos/PosPwaCacheGuard.tsx"), "utf8");
   const page = readFileSync(path.join(root, "src/app/pos/page.tsx"), "utf8");
+  const viewportQa = readFileSync(path.join(root, "scripts/pos-viewport-qa.ts"), "utf8");
   const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
   const visibleGuard = readFileSync(path.join(root, "src/app/pos/PosVisibleViewport.tsx"), "utf8");
   const guardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
@@ -61,6 +62,9 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(pwaGuard, /storageSet\(window\.localStorage, POS_PWA_CACHE_VERSION_KEY, version\)/);
   assert.doesNotMatch(pwaGuard, /posPwaRefresh/);
   assert.doesNotMatch(pwaGuard, /window\.location\.replace/);
+  assert.match(viewportQa, /\/pos\?source=pos-pwa/);
+  assert.doesNotMatch(viewportQa, /expected fixed/);
+  assert.match(viewportQa, /body\.position === "fixed"/);
 
   assert.match(visibleGuard, /const LOCK_ATTRIBUTE = "data-pos-viewport-locked"/);
   assert.match(visibleGuard, /const HOME_SCREEN_ATTRIBUTE = "data-pos-home-screen"/);

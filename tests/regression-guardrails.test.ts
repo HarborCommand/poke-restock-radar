@@ -188,6 +188,7 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   const pwaGuard = readFileSync(path.join(root, "src/app/pos/PosPwaCacheGuard.tsx"), "utf8");
   const serviceWorker = readFileSync(path.join(root, "public/sw.js"), "utf8");
   const posManifest = readFileSync(path.join(root, "public/manifest-pos.webmanifest"), "utf8");
+  const posViewportQa = readFileSync(path.join(root, "scripts/pos-viewport-qa.ts"), "utf8");
   const storeModeCss = readFileSync(path.join(root, "src/app/pos/pos-store-mode.module.css"), "utf8");
   const saleViewportGuard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
   const saleViewportGuardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
@@ -212,6 +213,9 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(pwaGuard, /storageSet\(window\.localStorage, POS_PWA_CACHE_VERSION_KEY, version\)/);
   assert.doesNotMatch(pwaGuard, /window\.location\.replace/);
   assert.doesNotMatch(pwaGuard, /posPwaRefresh/);
+  assert.match(posViewportQa, /\/pos\?source=pos-pwa/);
+  assert.match(posViewportQa, /body\.position === "fixed"/);
+  assert.doesNotMatch(posViewportQa, /expected fixed/);
   assert.match(saleViewportGuard, /function viewportHeight/);
   assert.match(saleViewportGuard, /function isHomeScreenMode/);
   assert.match(saleViewportGuard, /: viewport\.height/);
