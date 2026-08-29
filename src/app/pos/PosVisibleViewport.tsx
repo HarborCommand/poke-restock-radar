@@ -4,6 +4,7 @@ import { useLayoutEffect } from "react";
 
 const CSS_VARIABLE = "--pos-visible-height";
 const LOCK_ATTRIBUTE = "data-pos-viewport-locked";
+const HOME_SCREEN_ATTRIBUTE = "data-pos-home-screen";
 const CHECKOUT_SELECTOR = '[data-pos-register-view="checkout"][data-pos-authenticated="true"]';
 const ALLOWED_SCROLL_SELECTOR = [
   ".pos-result-grid",
@@ -23,6 +24,14 @@ function checkoutIsActive() {
   return Boolean(document.querySelector<HTMLElement>(CHECKOUT_SELECTOR));
 }
 
+function isHomeScreenMode() {
+  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+  return Boolean(
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+      navigatorWithStandalone.standalone
+  );
+}
+
 function eventTargetElement(target: EventTarget | null) {
   if (target instanceof Element) return target;
   if (target instanceof Node) return target.parentElement;
@@ -38,14 +47,24 @@ function setViewportLock(locked: boolean) {
   const { body } = document;
 
   if (locked) {
+    const homeScreen = isHomeScreenMode();
     root.setAttribute(LOCK_ATTRIBUTE, "true");
     body.setAttribute(LOCK_ATTRIBUTE, "true");
+    if (homeScreen) {
+      root.setAttribute(HOME_SCREEN_ATTRIBUTE, "true");
+      body.setAttribute(HOME_SCREEN_ATTRIBUTE, "true");
+    } else {
+      root.removeAttribute(HOME_SCREEN_ATTRIBUTE);
+      body.removeAttribute(HOME_SCREEN_ATTRIBUTE);
+    }
     if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
     return;
   }
 
   root.removeAttribute(LOCK_ATTRIBUTE);
   body.removeAttribute(LOCK_ATTRIBUTE);
+  root.removeAttribute(HOME_SCREEN_ATTRIBUTE);
+  body.removeAttribute(HOME_SCREEN_ATTRIBUTE);
 }
 
 export function PosVisibleViewport() {

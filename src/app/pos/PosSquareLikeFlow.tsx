@@ -77,15 +77,13 @@ function completeButtonIsDisabled(button: HTMLButtonElement | null) {
 
 function visibleViewportBounds() {
   const viewport = window.visualViewport;
-  const top = viewport?.offsetTop ?? 0;
-  const left = viewport?.offsetLeft ?? 0;
   const height = viewport?.height ?? window.innerHeight;
   const width = viewport?.width ?? window.innerWidth;
   return {
-    top,
-    left,
-    right: left + width,
-    bottom: top + height
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: height
   };
 }
 

@@ -30,6 +30,17 @@
   margin: 0 !important;
 }
 
+/*
+ * Home Screen POS runs without Safari's browser chrome and can rubber-band the
+ * visual viewport separately from the layout viewport. A fixed body turns that
+ * into a cropped app snapshot, so standalone mode keeps the document in normal
+ * flow while the product grid and Current Sale list remain the scroll surfaces.
+ */
+:global(body[data-pos-viewport-locked="true"][data-pos-home-screen="true"]) {
+  position: static !important;
+  inset: auto !important;
+}
+
 .saleViewportGuard :global([data-pos-register-view="checkout"][data-pos-authenticated="true"]) {
   width: 100% !important;
   height: var(--pos-sale-root-height, var(--pos-visible-height, 100dvh)) !important;

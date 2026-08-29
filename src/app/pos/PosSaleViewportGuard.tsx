@@ -9,10 +9,10 @@ const MIN_PANEL_HEIGHT = 320;
 const MIN_WORKSPACE_HEIGHT = 420;
 const BOTTOM_GAP = 64;
 
-function viewportBottom() {
+function viewportHeight() {
   const viewport = window.visualViewport;
   if (viewport && Number.isFinite(viewport.height) && viewport.height > 0) {
-    return viewport.offsetTop + viewport.height;
+    return viewport.height;
   }
   return window.innerHeight;
 }
@@ -46,8 +46,9 @@ export function PosSaleViewportGuard() {
           return;
         }
 
-        const bottom = viewportBottom() - BOTTOM_GAP;
-        const visibleHeight = Math.max(MIN_WORKSPACE_HEIGHT, Math.floor(viewportBottom()));
+        const availableViewportHeight = viewportHeight();
+        const bottom = availableViewportHeight - BOTTOM_GAP;
+        const visibleHeight = Math.max(MIN_WORKSPACE_HEIGHT, Math.floor(availableViewportHeight));
         const workspaceTop = workspace.getBoundingClientRect().top;
         const panelTop = panel.getBoundingClientRect().top;
         const workspaceAvailable = Math.max(MIN_WORKSPACE_HEIGHT, Math.floor(bottom - workspaceTop));

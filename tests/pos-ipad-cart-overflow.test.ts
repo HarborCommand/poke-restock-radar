@@ -62,6 +62,9 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(pwaGuard, /window\.location\.replace/);
 
   assert.match(visibleGuard, /const LOCK_ATTRIBUTE = "data-pos-viewport-locked"/);
+  assert.match(visibleGuard, /const HOME_SCREEN_ATTRIBUTE = "data-pos-home-screen"/);
+  assert.match(visibleGuard, /display-mode: standalone/);
+  assert.match(visibleGuard, /navigatorWithStandalone\.standalone/);
   assert.match(visibleGuard, /const ALLOWED_SCROLL_SELECTOR/);
   assert.match(visibleGuard, /\.pos-result-grid/);
   assert.match(visibleGuard, /\.pos-cart-lines:not\(\.is-empty\)/);
@@ -71,6 +74,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(visibleGuard, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]/);
   assert.match(visibleGuard, /root\.setAttribute\(LOCK_ATTRIBUTE, "true"\)/);
   assert.match(visibleGuard, /body\.setAttribute\(LOCK_ATTRIBUTE, "true"\)/);
+  assert.match(visibleGuard, /body\.setAttribute\(HOME_SCREEN_ATTRIBUTE, "true"\)/);
   assert.match(visibleGuard, /window\.scrollTo\(0, 0\)/);
   assert.match(visibleGuard, /new MutationObserver\(sync\)/);
   assert.match(visibleGuard, /attributeFilter: \["class", "data-pos-authenticated", "data-pos-register-view"\]/);
@@ -87,7 +91,9 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
 
   assert.match(guard, /const BOTTOM_GAP = 64/);
   assert.match(guard, /window\.visualViewport/);
-  assert.match(guard, /viewport\.offsetTop \+ viewport\.height/);
+  assert.match(guard, /function viewportHeight/);
+  assert.match(guard, /return viewport\.height/);
+  assert.doesNotMatch(guard, /viewport\.offsetTop \+ viewport\.height/);
   assert.match(guard, /root\.dataset\.posSquareFlowMode !== "sale"/);
   assert.match(guard, /workspace\.getBoundingClientRect\(\)\.top/);
   assert.match(guard, /panel\.getBoundingClientRect\(\)\.top/);
@@ -104,6 +110,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /html\[data-pos-viewport-locked="true"\]/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: fixed !important/);
+  assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\[data-pos-home-screen="true"\]\)[\s\S]*position: static !important/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*height: var\(--pos-sale-root-height, var\(--pos-visible-height, 100dvh\)\) !important/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*overflow: hidden !important/);
   assert.match(guardCss, /\[data-pos-checkout-host="true"\][\s\S]*height: 100% !important/);

@@ -210,6 +210,9 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(pwaGuard, /display-mode: standalone/);
   assert.match(pwaGuard, /CLEAR_APP_CACHE/);
   assert.match(pwaGuard, /window\.location\.replace/);
+  assert.match(saleViewportGuard, /function viewportHeight/);
+  assert.match(saleViewportGuard, /return viewport\.height/);
+  assert.doesNotMatch(saleViewportGuard, /viewport\.offsetTop \+ viewport\.height/);
   assert.match(flow, /data\.posSquareFlowMode = mode/);
   assert.match(flow, /setMode\("payment"\)/);
   assert.match(flow, /setMode\("customer"\)/);
@@ -237,6 +240,7 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(saleViewportGuardCss, /\.pos-search-panel\)[\s\S]*display: flex !important/);
   assert.match(saleViewportGuardCss, /\.saleViewportGuard \{[\s\S]*height: var\(--pos-visible-height, 100dvh\)/);
   assert.match(saleViewportGuardCss, /\.saleViewportGuard \{[\s\S]*overflow: hidden/);
+  assert.match(saleViewportGuardCss, /body\[data-pos-viewport-locked="true"\]\[data-pos-home-screen="true"\]\)[\s\S]*position: static !important/);
   assert.match(saleViewportGuardCss, /\.pos-result-grid\)[\s\S]*overflow-y: auto !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel\)[\s\S]*overflow: hidden !important/);
   assert.match(saleViewportGuardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*overflow: hidden !important/);
