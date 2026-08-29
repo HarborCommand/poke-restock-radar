@@ -205,6 +205,9 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*position: fixed !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*right: var\(--pos-checkout-dock-right/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*left: var\(--pos-checkout-dock-left/);
+  assert.match(saleViewportGuardCss, /\.pos-cart-line\)[\s\S]*grid-template-rows: minmax\(52px, auto\) minmax\(64px, auto\) auto !important/);
+  assert.match(saleViewportGuardCss, /\.pos-cart-line\)[\s\S]*overflow: visible !important/);
+  assert.match(saleViewportGuardCss, /\.pos-cart-line > \.pos-cart-line-copy\)[\s\S]*overflow: visible !important/);
 });
 
 test("core safety regression suites remain part of the default test command", () => {

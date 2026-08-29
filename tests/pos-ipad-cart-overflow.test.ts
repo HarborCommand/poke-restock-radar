@@ -56,9 +56,15 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*overflow-y: auto !important/);
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*-webkit-overflow-scrolling: touch/);
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*touch-action: pan-y/);
-  assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*padding-bottom: max\(118px/);
+  assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*padding-bottom: max\(152px/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*flex: 0 0 auto !important/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow: visible !important/);
+  assert.match(guardCss, /\.pos-cart-line\)[\s\S]*grid-template-rows: minmax\(52px, auto\) minmax\(64px, auto\) auto !important/);
+  assert.match(guardCss, /\.pos-cart-line\)[\s\S]*grid-auto-rows: auto !important/);
+  assert.match(guardCss, /\.pos-cart-line\)[\s\S]*overflow: visible !important/);
+  assert.match(guardCss, /\.pos-cart-line > \.pos-cart-line-copy\)[\s\S]*overflow: visible !important/);
+  assert.match(guardCss, /\.pos-cart-line > \.pos-cart-line-copy > \.pos-line-price-stack\)[\s\S]*overflow: visible !important/);
+  assert.match(guardCss, /\.pos-cart-line > \.pos-cart-line-copy > \.pos-line-actions\)[\s\S]*overflow: visible !important/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*flex: 0 0 auto !important/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*min-height: 66px !important/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*padding-bottom: 0 !important/);

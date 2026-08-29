@@ -23,8 +23,8 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   box-sizing: border-box !important;
-  padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
-  scroll-padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
+  padding-bottom: max(152px, calc(env(safe-area-inset-bottom) + 132px)) !important;
+  scroll-padding-bottom: max(152px, calc(env(safe-area-inset-bottom) + 132px)) !important;
 }
 
 .saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
@@ -34,6 +34,32 @@
   max-height: none !important;
   overflow: visible !important;
   padding-bottom: 0 !important;
+  touch-action: pan-y;
+}
+
+/*
+ * Adjusted-price lines add original price, POS price, discount reason, and
+ * action buttons. Those details must increase scroll height instead of being
+ * clipped by older compact-row rules.
+ */
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line),
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="compact"] .pos-cart-line),
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel[data-pos-cart-density="dense"] .pos-cart-line) {
+  grid-template-rows: minmax(52px, auto) minmax(64px, auto) auto !important;
+  grid-auto-rows: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  align-content: start !important;
+  touch-action: pan-y;
+}
+
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy),
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy > .pos-line-price-stack),
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy > .pos-line-actions),
+.saleViewportGuard :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-line > .pos-cart-line-copy > em) {
+  max-height: none !important;
+  overflow: visible !important;
   touch-action: pan-y;
 }
 

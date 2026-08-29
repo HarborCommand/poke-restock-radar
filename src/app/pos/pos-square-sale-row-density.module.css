@@ -7,6 +7,8 @@
  * fix stopped rows from shrinking, but each line still used a two-row grid;
  * long product metadata plus Adjust price could spill into the next item on
  * iPad. Give every product its own layout boundary before the next row starts.
+ * Discounted rows can become taller after Adjust price; keep that height in
+ * the panel scroll flow instead of clipping it inside the row.
  */
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines),
 .saleRowDensity :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-lines:not(.is-empty)) {
@@ -26,7 +28,7 @@
   min-height: 154px !important;
   height: auto !important;
   box-sizing: border-box !important;
-  overflow: hidden !important;
+  overflow: visible !important;
   isolation: isolate;
   padding-block: 12px !important;
   column-gap: 10px !important;
