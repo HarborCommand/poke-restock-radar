@@ -39,6 +39,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   const viewportQa = readFileSync(path.join(root, "scripts/pos-viewport-qa.ts"), "utf8");
   const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
   const visibleGuard = readFileSync(path.join(root, "src/app/pos/PosVisibleViewport.tsx"), "utf8");
+  const viewportHelper = readFileSync(path.join(root, "src/app/pos/posViewport.ts"), "utf8");
   const guardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
 
   assert.match(layout, /import \{ PosSaleViewportGuard \} from "\.\/PosSaleViewportGuard"/);
@@ -66,12 +67,22 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.doesNotMatch(viewportQa, /expected fixed/);
   assert.match(viewportQa, /body\.position === "fixed"/);
 
+  assert.match(viewportHelper, /export function isPosHomeScreenMode/);
+  assert.match(viewportHelper, /export function getUsableViewportHeight/);
+  assert.match(viewportHelper, /export function getUsableViewportWidth/);
+  assert.match(viewportHelper, /display-mode: standalone/);
+  assert.match(viewportHelper, /navigatorWithStandalone\.standalone/);
+  assert.match(viewportHelper, /launchedFromPosShortcut/);
+  assert.match(viewportHelper, /window\.navigator\.maxTouchPoints > 1/);
+  assert.match(viewportHelper, /Math\.min\(\.\.\.availableHeights\)/);
+  assert.match(viewportHelper, /Math\.min\(\.\.\.availableWidths\)/);
+  assert.doesNotMatch(viewportHelper, /Math\.max\(window\.innerHeight/);
+  assert.doesNotMatch(viewportHelper, /Math\.max\(window\.innerWidth/);
+
+  assert.match(visibleGuard, /import \{ getUsableViewportHeight, isPosHomeScreenMode \} from "\.\/posViewport"/);
   assert.match(visibleGuard, /const LOCK_ATTRIBUTE = "data-pos-viewport-locked"/);
   assert.match(visibleGuard, /const HOME_SCREEN_ATTRIBUTE = "data-pos-home-screen"/);
-  assert.match(visibleGuard, /display-mode: standalone/);
-  assert.match(visibleGuard, /navigatorWithStandalone\.standalone/);
-  assert.match(visibleGuard, /url\.searchParams\.get\("source"\) === "pos-pwa"/);
-  assert.match(visibleGuard, /window\.navigator\.maxTouchPoints > 1/);
+  assert.match(visibleGuard, /return getUsableViewportHeight\(\)/);
   assert.match(visibleGuard, /const ALLOWED_SCROLL_SELECTOR/);
   assert.match(visibleGuard, /\.pos-result-grid/);
   assert.match(visibleGuard, /\.pos-cart-lines:not\(\.is-empty\)/);
@@ -97,11 +108,11 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(shell, /data-pos-checkout-host=\{user \? "true" : undefined\}/);
 
   assert.match(guard, /const BOTTOM_GAP = 64/);
-  assert.match(guard, /window\.visualViewport/);
+  assert.match(guard, /import \{ getUsableViewportHeight \} from "\.\/posViewport"/);
   assert.match(guard, /function viewportHeight/);
-  assert.match(guard, /function isHomeScreenMode/);
-  assert.match(guard, /: viewport\.height/);
-  assert.match(guard, /Math\.max\(window\.innerHeight, viewport\.height\)/);
+  assert.match(guard, /return getUsableViewportHeight\(\)/);
+  assert.doesNotMatch(guard, /function isHomeScreenMode/);
+  assert.doesNotMatch(guard, /Math\.max\(window\.innerHeight, viewport\.height\)/);
   assert.doesNotMatch(guard, /viewport\.offsetTop \+ viewport\.height/);
   assert.match(guard, /root\.dataset\.posSquareFlowMode !== "sale"/);
   assert.match(guard, /workspace\.getBoundingClientRect\(\)\.top/);
@@ -170,6 +181,9 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /@media \(max-width: 739px\)[\s\S]*\.pos-workspace\)[\s\S]*grid-template-rows: minmax\(0, 1fr\) minmax\(300px, 46%\) !important/);
 
   assert.match(flow, /elementIsCheckoutVisible/);
+  assert.match(flow, /useLayoutEffect/);
+  assert.match(flow, /getUsableViewportHeight/);
+  assert.match(flow, /getUsableViewportWidth/);
   assert.match(flow, /visibleViewportBounds/);
   assert.match(flow, /floatingDockStyleForCartPanel/);
   assert.match(flow, /getBoundingClientRect\(\)/);

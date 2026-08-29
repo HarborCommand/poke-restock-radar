@@ -192,6 +192,7 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   const storeModeCss = readFileSync(path.join(root, "src/app/pos/pos-store-mode.module.css"), "utf8");
   const saleViewportGuard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
   const saleViewportGuardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
+  const posViewport = readFileSync(path.join(root, "src/app/pos/posViewport.ts"), "utf8");
 
   assert.match(layout, /<PosSquareLikeFlow \/>/);
   assert.match(layout, /<PosPwaCacheGuard \/>/);
@@ -216,12 +217,21 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(posViewportQa, /\/pos\?source=pos-pwa/);
   assert.match(posViewportQa, /body\.position === "fixed"/);
   assert.doesNotMatch(posViewportQa, /expected fixed/);
+  assert.match(posViewport, /export function getUsableViewportHeight/);
+  assert.match(posViewport, /export function getUsableViewportWidth/);
+  assert.match(posViewport, /export function isPosHomeScreenMode/);
+  assert.match(posViewport, /Math\.min\(\.\.\.availableHeights\)/);
+  assert.match(posViewport, /Math\.min\(\.\.\.availableWidths\)/);
+  assert.doesNotMatch(posViewport, /Math\.max\(window\.innerHeight/);
   assert.match(saleViewportGuard, /function viewportHeight/);
-  assert.match(saleViewportGuard, /function isHomeScreenMode/);
-  assert.match(saleViewportGuard, /: viewport\.height/);
-  assert.match(saleViewportGuard, /Math\.max\(window\.innerHeight, viewport\.height\)/);
+  assert.match(saleViewportGuard, /getUsableViewportHeight/);
+  assert.doesNotMatch(saleViewportGuard, /function isHomeScreenMode/);
+  assert.doesNotMatch(saleViewportGuard, /Math\.max\(window\.innerHeight, viewport\.height\)/);
   assert.doesNotMatch(saleViewportGuard, /viewport\.offsetTop \+ viewport\.height/);
   assert.match(flow, /data\.posSquareFlowMode = mode/);
+  assert.match(flow, /useLayoutEffect/);
+  assert.match(flow, /getUsableViewportHeight/);
+  assert.match(flow, /getUsableViewportWidth/);
   assert.match(flow, /setMode\("payment"\)/);
   assert.match(flow, /setMode\("customer"\)/);
   assert.match(flow, /hasActiveSquarePending/);

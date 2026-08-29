@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { getUsableViewportHeight } from "./posViewport";
 
 const CSS_VARIABLE = "--pos-sale-visible-height";
 const WORKSPACE_VARIABLE = "--pos-sale-workspace-height";
@@ -9,29 +10,8 @@ const MIN_PANEL_HEIGHT = 320;
 const MIN_WORKSPACE_HEIGHT = 420;
 const BOTTOM_GAP = 64;
 
-function isHomeScreenMode() {
-  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
-  const url = new URL(window.location.href);
-  const userAgent = window.navigator.userAgent || "";
-  const platform = window.navigator.platform || "";
-  const appleTouchDevice =
-    window.navigator.maxTouchPoints > 1 &&
-    (/iPad|iPhone|iPod/.test(userAgent) || platform === "MacIntel" || /Macintosh/.test(userAgent));
-
-  return Boolean(
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-      navigatorWithStandalone.standalone ||
-      url.searchParams.get("source") === "pos-pwa" ||
-      appleTouchDevice
-  );
-}
-
 function viewportHeight() {
-  const viewport = window.visualViewport;
-  if (viewport && Number.isFinite(viewport.height) && viewport.height > 0) {
-    return isHomeScreenMode() ? Math.max(window.innerHeight, viewport.height) : viewport.height;
-  }
-  return window.innerHeight;
+  return getUsableViewportHeight();
 }
 
 export function PosSaleViewportGuard() {

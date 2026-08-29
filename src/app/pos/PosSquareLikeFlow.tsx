@@ -2,8 +2,9 @@
 
 import { Check, ChevronLeft, CreditCard, UserRound } from "lucide-react";
 import { createPortal } from "react-dom";
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useState } from "react";
 import feedbackStyles from "./PosCustomerAttachFeedback.module.css";
+import { getUsableViewportHeight, getUsableViewportWidth } from "./posViewport";
 import styles from "./PosSquareLikeFlow.module.css";
 
 type FlowMode = "sale" | "customer" | "payment";
@@ -76,9 +77,8 @@ function completeButtonIsDisabled(button: HTMLButtonElement | null) {
 }
 
 function visibleViewportBounds() {
-  const viewport = window.visualViewport;
-  const height = viewport?.height ?? window.innerHeight;
-  const width = viewport?.width ?? window.innerWidth;
+  const height = getUsableViewportHeight();
+  const width = getUsableViewportWidth();
   return {
     top: 0,
     left: 0,
@@ -153,7 +153,7 @@ export function PosSquareLikeFlow() {
   const [attachedCustomerName, setAttachedCustomerName] = useState<string | null>(null);
   const [customerToast, setCustomerToast] = useState<string | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.has("data") || hasActiveSquarePending()) setMode("payment");
   }, []);
@@ -220,7 +220,7 @@ export function PosSquareLikeFlow() {
     return () => window.clearTimeout(timer);
   }, [customerToast]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.querySelector<HTMLElement>('[data-pos-authenticated="true"]');
     if (!root) return;
 

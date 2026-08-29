@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect } from "react";
+import { getUsableViewportHeight, isPosHomeScreenMode } from "./posViewport";
 
 const CSS_VARIABLE = "--pos-visible-height";
 const LOCK_ATTRIBUTE = "data-pos-viewport-locked";
@@ -15,32 +16,11 @@ const ALLOWED_SCROLL_SELECTOR = [
 ].join(",");
 
 function visibleHeight() {
-  const viewportHeight = window.visualViewport?.height;
-  const layoutHeight = window.innerHeight;
-  const measuredHeight = Number.isFinite(viewportHeight) && Number(viewportHeight) > 0 ? Number(viewportHeight) : layoutHeight;
-  const height = isHomeScreenMode() ? Math.max(layoutHeight, measuredHeight) : measuredHeight;
-  return Math.max(320, Math.round(height));
+  return getUsableViewportHeight();
 }
 
 function checkoutIsActive() {
   return Boolean(document.querySelector<HTMLElement>(CHECKOUT_SELECTOR));
-}
-
-function isHomeScreenMode() {
-  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
-  const url = new URL(window.location.href);
-  const userAgent = window.navigator.userAgent || "";
-  const platform = window.navigator.platform || "";
-  const appleTouchDevice =
-    window.navigator.maxTouchPoints > 1 &&
-    (/iPad|iPhone|iPod/.test(userAgent) || platform === "MacIntel" || /Macintosh/.test(userAgent));
-
-  return Boolean(
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-      navigatorWithStandalone.standalone ||
-      url.searchParams.get("source") === "pos-pwa" ||
-      appleTouchDevice
-  );
 }
 
 function eventTargetElement(target: EventTarget | null) {
@@ -58,7 +38,7 @@ function setViewportLock(locked: boolean) {
   const { body } = document;
 
   if (locked) {
-    const homeScreen = isHomeScreenMode();
+    const homeScreen = isPosHomeScreenMode();
     root.setAttribute(LOCK_ATTRIBUTE, "true");
     body.setAttribute(LOCK_ATTRIBUTE, "true");
     if (homeScreen) {
