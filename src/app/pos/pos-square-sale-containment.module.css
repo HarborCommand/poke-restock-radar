@@ -29,8 +29,8 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   box-sizing: border-box !important;
-  padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
-  scroll-padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
+  padding-bottom: max(204px, calc(env(safe-area-inset-bottom) + 184px)) !important;
+  scroll-padding-bottom: max(204px, calc(env(safe-area-inset-bottom) + 184px)) !important;
 }
 
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-header) {
@@ -63,7 +63,7 @@
 /* PosSquareLikeFlow portals this footer directly into .pos-cart-panel. */
 .saleContainmentFix :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-panel > [aria-label="Checkout action"]) {
   position: fixed !important;
-  inset: auto var(--pos-checkout-dock-right, max(14px, env(safe-area-inset-right))) max(12px, env(safe-area-inset-bottom)) var(--pos-checkout-dock-left, auto) !important;
+  inset: auto var(--pos-checkout-dock-right, max(14px, env(safe-area-inset-right))) max(32px, calc(env(safe-area-inset-bottom) + 24px)) var(--pos-checkout-dock-left, auto) !important;
   z-index: 20 !important;
   display: grid !important;
   width: var(--pos-checkout-dock-width, min(360px, calc(100vw - 28px))) !important;

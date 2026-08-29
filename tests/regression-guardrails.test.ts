@@ -202,8 +202,10 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(flowCss, /data-pos-square-flow-mode="payment"[\s\S]*\.pos-complete-button[\s\S]*position: sticky !important/);
   assert.match(flowCss, /data-pos-square-flow-mode="customer"[\s\S]*\.pos-customer-panel[\s\S]*display: block !important/);
   assert.match(flowCss, /\.floatingActionDock[\s\S]*position: fixed/);
+  assert.match(flowCss, /\.floatingActionDock[\s\S]*bottom: max\(32px, calc\(env\(safe-area-inset-bottom\) \+ 24px\)\)/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*position: fixed !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*right: var\(--pos-checkout-dock-right/);
+  assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*bottom: max\(32px, calc\(env\(safe-area-inset-bottom\) \+ 24px\)\) !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*left: var\(--pos-checkout-dock-left/);
   assert.match(saleViewportGuardCss, /\.pos-cart-line\)[\s\S]*grid-template-rows: minmax\(52px, auto\) minmax\(64px, auto\) auto !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-line\)[\s\S]*overflow: visible !important/);

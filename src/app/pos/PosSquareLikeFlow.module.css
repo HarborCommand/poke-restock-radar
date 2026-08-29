@@ -17,8 +17,8 @@
   overscroll-behavior-y: contain !important;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
-  scroll-padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 104px)) !important;
+  padding-bottom: max(204px, calc(env(safe-area-inset-bottom) + 184px)) !important;
+  scroll-padding-bottom: max(204px, calc(env(safe-area-inset-bottom) + 184px)) !important;
 }
 
 :global([data-pos-authenticated="true"][data-pos-square-flow-mode="sale"] .pos-cart-header) {
@@ -145,7 +145,7 @@
   position: fixed;
   right: var(--pos-checkout-dock-right, max(14px, env(safe-area-inset-right)));
   left: var(--pos-checkout-dock-left, auto);
-  bottom: max(12px, env(safe-area-inset-bottom));
+  bottom: max(32px, calc(env(safe-area-inset-bottom) + 24px));
   z-index: 5100;
   display: grid;
   grid-template-columns: minmax(0, 0.62fr) minmax(0, 1.38fr);

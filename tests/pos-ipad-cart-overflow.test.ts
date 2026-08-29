@@ -56,7 +56,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*overflow-y: auto !important/);
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*-webkit-overflow-scrolling: touch/);
   assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*touch-action: pan-y/);
-  assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*padding-bottom: max\(152px/);
+  assert.match(guardCss, /\.pos-cart-panel\)[\s\S]*padding-bottom: max\(204px/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*flex: 0 0 auto !important/);
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*overflow: visible !important/);
   assert.match(guardCss, /\.pos-cart-line\)[\s\S]*grid-template-rows: minmax\(52px, auto\) minmax\(64px, auto\) auto !important/);
@@ -70,6 +70,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /\.pos-cart-lines:not\(\.is-empty\)[\s\S]*padding-bottom: 0 !important/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*position: fixed !important/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*right: var\(--pos-checkout-dock-right/);
+  assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*bottom: max\(32px, calc\(env\(safe-area-inset-bottom\) \+ 24px\)\) !important/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*left: var\(--pos-checkout-dock-left/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*width: var\(--pos-checkout-dock-width/);
   assert.match(guardCss, /\.pos-cart-panel > \[aria-label="Checkout action"\][\s\S]*transform: var\(--pos-checkout-dock-transform/);
@@ -91,7 +92,7 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(flow, /completeButtonIsDisabled/);
   assert.match(flow, /button\.click\(\)/);
   assert.match(flowCss, /\.floatingActionDock[\s\S]*position: fixed/);
-  assert.match(flowCss, /\.floatingActionDock[\s\S]*bottom: max\(12px, env\(safe-area-inset-bottom\)\)/);
+  assert.match(flowCss, /\.floatingActionDock[\s\S]*bottom: max\(32px, calc\(env\(safe-area-inset-bottom\) \+ 24px\)\)/);
   assert.match(flowCss, /\.floatingActionDock[\s\S]*z-index: 5100/);
   assert.match(flowCss, /\.floatingCompleteButton/);
 });
