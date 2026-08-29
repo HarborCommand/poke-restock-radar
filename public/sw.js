@@ -1,4 +1,4 @@
-const CACHE_NAME = "poke-radar-sw-2026-08-29-pos-app-scroll-v4";
+const CACHE_NAME = "poke-radar-sw-2026-08-29-pos-pwa-refresh-v5";
 const OFFLINE_ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",
@@ -18,6 +18,35 @@ async function notifyClients(message) {
 async function clearAppCaches() {
   const keys = await caches.keys();
   await Promise.all(keys.map((key) => caches.delete(key)));
+}
+
+function isPosPath(pathname) {
+  return pathname === "/pos" || pathname.startsWith("/pos/");
+}
+
+function requestCameFromPos(request) {
+  if (!request.referrer) return false;
+  try {
+    const referrer = new URL(request.referrer);
+    return referrer.origin === self.location.origin && isPosPath(referrer.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function posShouldBypassCache(request, url) {
+  return isPosPath(url.pathname) || url.pathname === "/manifest-pos.webmanifest" || requestCameFromPos(request);
+}
+
+async function fetchFresh(request, fallbackUrl) {
+  try {
+    return await fetch(request, { cache: "reload" });
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    if (fallbackUrl) return caches.match(fallbackUrl);
+    throw new Error("Network request failed and no cached fallback exists.");
+  }
 }
 
 self.addEventListener("install", (event) => {
@@ -55,6 +84,13 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.pathname.startsWith("/api/")) return;
+
+  // POS is a checkout/register app. Always fetch it fresh so the iPad Home
+  // Screen install cannot keep running an old broken app shell.
+  if (posShouldBypassCache(request, url)) {
+    event.respondWith(fetchFresh(request, request.mode === "navigate" ? "/offline.html" : null));
+    return;
+  }
 
   // Account HTML and App Router payloads can contain authenticated customer data.
   // Always use the network so they cannot survive logout in a shared worker cache.

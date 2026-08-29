@@ -5,6 +5,7 @@ import { PosCartImageFix } from "./PosCartImageFix";
 import { PosCashTender } from "./PosCashTender";
 import { PosCheckoutPresentation } from "./PosCheckoutPresentation";
 import { PosLoadingBrand } from "./PosLoadingBrand";
+import { PosPwaCacheGuard } from "./PosPwaCacheGuard";
 import { PosRegisterShell } from "./PosRegisterShell";
 import { PosSaleViewportGuard } from "./PosSaleViewportGuard";
 import { PosScannerFocusButton } from "./PosScannerFocusButton";
@@ -40,6 +41,7 @@ export default function PosLayout({ children }: { children: ReactNode }) {
   return (
     <div className={`${styles.posShell} ${registerStyles.registerShell} ${squareStyles.squareRegister} ${overflowStyles.cartOverflowFix} ${saleContainmentStyles.saleContainmentFix} ${saleRowDensityStyles.saleRowDensity} ${finalFixStyles.finalFix} ${polishStyles.uiPolish} ${cartTitleLayoutStyles.cartTitleLayout} ${saleViewportGuardStyles.saleViewportGuard}`}>
       <PosLoadingBrand />
+      <PosPwaCacheGuard />
       <PosVisibleViewport />
       <PosSaleViewportGuard />
       <PosRegisterShell>{children}</PosRegisterShell>

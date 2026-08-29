@@ -184,12 +184,27 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   const flow = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.tsx"), "utf8");
   const flowCss = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.module.css"), "utf8");
   const page = readFileSync(path.join(root, "src/app/pos/page.tsx"), "utf8");
+  const nextConfig = readFileSync(path.join(root, "next.config.mjs"), "utf8");
+  const pwaGuard = readFileSync(path.join(root, "src/app/pos/PosPwaCacheGuard.tsx"), "utf8");
+  const serviceWorker = readFileSync(path.join(root, "public/sw.js"), "utf8");
   const storeModeCss = readFileSync(path.join(root, "src/app/pos/pos-store-mode.module.css"), "utf8");
   const saleViewportGuard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
   const saleViewportGuardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
 
   assert.match(layout, /<PosSquareLikeFlow \/>/);
+  assert.match(layout, /<PosPwaCacheGuard \/>/);
   assert.match(page, /data-pos-store-mode="true"/);
+  assert.match(nextConfig, /source: "\/sw\.js"/);
+  assert.match(nextConfig, /Service-Worker-Allowed/);
+  assert.match(nextConfig, /source: "\/manifest-pos\.webmanifest"/);
+  assert.match(nextConfig, /source: "\/pos"/);
+  assert.match(nextConfig, /source: "\/pos\/:path\*"/);
+  assert.match(nextConfig, /private, no-store, no-cache/);
+  assert.match(serviceWorker, /posShouldBypassCache/);
+  assert.match(serviceWorker, /fetchFresh\(request, request\.mode === "navigate" \? "\/offline\.html" : null\)/);
+  assert.match(pwaGuard, /display-mode: standalone/);
+  assert.match(pwaGuard, /CLEAR_APP_CACHE/);
+  assert.match(pwaGuard, /window\.location\.replace/);
   assert.match(flow, /data\.posSquareFlowMode = mode/);
   assert.match(flow, /setMode\("payment"\)/);
   assert.match(flow, /setMode\("customer"\)/);

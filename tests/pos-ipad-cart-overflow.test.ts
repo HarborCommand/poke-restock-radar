@@ -33,16 +33,28 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   const flow = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.tsx"), "utf8");
   const flowCss = readFileSync(path.join(root, "src/app/pos/PosSquareLikeFlow.module.css"), "utf8");
   const guard = readFileSync(path.join(root, "src/app/pos/PosSaleViewportGuard.tsx"), "utf8");
+  const pwaGuard = readFileSync(path.join(root, "src/app/pos/PosPwaCacheGuard.tsx"), "utf8");
   const page = readFileSync(path.join(root, "src/app/pos/page.tsx"), "utf8");
   const shell = readFileSync(path.join(root, "src/app/pos/PosRegisterShell.tsx"), "utf8");
   const visibleGuard = readFileSync(path.join(root, "src/app/pos/PosVisibleViewport.tsx"), "utf8");
   const guardCss = readFileSync(path.join(root, "src/app/pos/pos-sale-viewport-guard.module.css"), "utf8");
 
   assert.match(layout, /import \{ PosSaleViewportGuard \} from "\.\/PosSaleViewportGuard"/);
+  assert.match(layout, /import \{ PosPwaCacheGuard \} from "\.\/PosPwaCacheGuard"/);
   assert.match(layout, /import saleViewportGuardStyles from "\.\/pos-sale-viewport-guard\.module\.css"/);
   assert.match(layout, /cartTitleLayoutStyles\.cartTitleLayout\} \$\{saleViewportGuardStyles\.saleViewportGuard\}/);
+  assert.match(layout, /<PosPwaCacheGuard \/>[\s\S]*<PosVisibleViewport \/>/);
   assert.match(layout, /<PosVisibleViewport \/>[\s\S]*<PosSaleViewportGuard \/>/);
   assert.match(layout, /<PosSaleViewportGuard \/>[\s\S]*<PosRegisterShell>\{children\}<\/PosRegisterShell>/);
+
+  assert.match(pwaGuard, /display-mode: standalone/);
+  assert.match(pwaGuard, /navigatorWithStandalone\.standalone/);
+  assert.match(pwaGuard, /BUILD_INFO\.serviceWorkerVersion/);
+  assert.match(pwaGuard, /navigator\.serviceWorker\.register\(SERVICE_WORKER_PATH, \{ updateViaCache: "none" \}\)/);
+  assert.match(pwaGuard, /registration\.active\?\.postMessage\(\{ type: "CLEAR_APP_CACHE" \}\)/);
+  assert.match(pwaGuard, /key\.startsWith\(APP_CACHE_PREFIX\)/);
+  assert.match(pwaGuard, /posPwaRefresh/);
+  assert.match(pwaGuard, /window\.location\.replace/);
 
   assert.match(visibleGuard, /const LOCK_ATTRIBUTE = "data-pos-viewport-locked"/);
   assert.match(visibleGuard, /const ALLOWED_SCROLL_SELECTOR/);

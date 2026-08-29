@@ -51,11 +51,18 @@ test("customer reward activity omits raw ledger reasons", () => {
 test("account pages are explicitly private and non-indexable", () => {
   const config = readFileSync(path.join(root, "next.config.mjs"), "utf8");
   const serviceWorker = readFileSync(path.join(root, "public/sw.js"), "utf8");
+  assert.match(config, /source: "\/sw\.js"/);
+  assert.match(config, /Service-Worker-Allowed/);
+  assert.match(config, /source: "\/manifest-pos\.webmanifest"/);
   assert.match(config, /source: "\/account\/:path\*"/);
+  assert.match(config, /source: "\/pos"/);
+  assert.match(config, /source: "\/pos\/:path\*"/);
   assert.match(config, /private, no-store, no-cache/);
   assert.match(config, /X-Robots-Tag/);
   assert.match(serviceWorker, /url\.pathname === "\/account"/);
   assert.match(serviceWorker, /url\.pathname\.startsWith\("\/account\/"\)/);
+  assert.match(serviceWorker, /isPosPath/);
+  assert.match(serviceWorker, /posShouldBypassCache/);
   assert.match(serviceWorker, /request\.headers\.get\("RSC"\) === "1"/);
   assert.match(serviceWorker, /!cacheControl\.includes\("private"\)/);
   assert.match(serviceWorker, /!cacheControl\.includes\("no-store"\)/);

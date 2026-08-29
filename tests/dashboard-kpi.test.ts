@@ -1786,6 +1786,7 @@ test("admin health exposes build version and cache refresh controls", () => {
   const health = fs.readFileSync(new URL("../src/lib/health.ts", import.meta.url), "utf8");
   const types = fs.readFileSync(new URL("../src/types/radar.ts", import.meta.url), "utf8");
   const serviceWorker = fs.readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
+  const nextConfig = fs.readFileSync(new URL("../next.config.mjs", import.meta.url), "utf8");
   const packageJson = fs.readFileSync(new URL("../package.json", import.meta.url), "utf8");
 
   assert.match(app, /App Build/);
@@ -1794,9 +1795,15 @@ test("admin health exposes build version and cache refresh controls", () => {
   assert.match(app, /APP_CACHE_CLEARED/);
   assert.match(health, /getBuildInfo/);
   assert.match(types, /serviceWorkerVersion/);
-  assert.match(serviceWorker, /poke-radar-sw-2026-08-29-pos-app-scroll-v4/);
+  assert.match(serviceWorker, /poke-radar-sw-2026-08-29-pos-pwa-refresh-v5/);
   assert.match(serviceWorker, /CLEAR_APP_CACHE/);
   assert.match(serviceWorker, /SKIP_WAITING/);
+  assert.match(serviceWorker, /posShouldBypassCache/);
+  assert.match(serviceWorker, /url\.pathname === "\/manifest-pos\.webmanifest"/);
+  assert.match(serviceWorker, /requestCameFromPos/);
+  assert.match(nextConfig, /source: "\/sw\.js"/);
+  assert.match(nextConfig, /Service-Worker-Allowed/);
+  assert.match(nextConfig, /source: "\/manifest-pos\.webmanifest"/);
   assert.match(packageJson, /"build:info"/);
   assert.match(packageJson, /"prevercel-build"/);
 });
