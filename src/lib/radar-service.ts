@@ -8,6 +8,7 @@ import {
 } from "@/lib/authenticity-proof";
 import { prisma } from "@/lib/db";
 import { getAppHealth } from "@/lib/health";
+import { consumeInventoryPhysicalQuantity, ensureInventoryPhysicalLocationTable } from "@/lib/inventory-physical-location";
 import { runProductMonitorCheck, targetMonitorBatchSize, targetMonitorCadenceMinutes } from "@/lib/monitor";
 import { deliverAlert, notificationSummary } from "@/lib/notifications";
 import { getSavedProductImageUrls, syncedProductImageFields, uniqueProductImageUrls } from "@/lib/product-images";
@@ -7395,6 +7396,8 @@ async function createPosInventorySaleLine(
 
   if (remainingToAllocate > 0) costBasis += remainingToAllocate * averageCost;
 
+  await consumeInventoryPhysicalQuantity(item.id, "IN_STORE", line.quantity, line.dto.quantityOwned, tx);
+
   const roundedCostBasis = roundPosMoney(costBasis);
   const profitLoss = roundPosMoney(netSale - roundedCostBasis);
   const roiPercent = roundedCostBasis > 0 ? (profitLoss / roundedCostBasis) * 100 : null;
@@ -7679,6 +7682,7 @@ export async function createPosSale(
     throw new Error("Tax-exempt sales require a reason and certificate or authorization reference.");
   }
   const verifiedQuote = verifyPosTaxQuoteToken(input.quoteId, currentUser.id);
+  await ensureInventoryPhysicalLocationTable();
 
   const receipt = await runRewardSerializableTransaction(async (tx) => {
     const sortedCartItems = [...cartItems].sort((a, b) => a.inventoryItemId.localeCompare(b.inventoryItemId));

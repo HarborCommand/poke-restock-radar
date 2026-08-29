@@ -5,7 +5,6 @@ import { logAudit } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { privateOk, readJson, safeMutationError, withPrivateNoStore, withRequestId } from "@/lib/http";
 import {
-  consumeInventoryPhysicalQuantity,
   listInventoryPhysicalLocationBalances
 } from "@/lib/inventory-physical-location";
 import { requestCorrelationId } from "@/lib/observability";
@@ -89,24 +88,6 @@ export async function POST(request: Request) {
     }
 
     const sale = await createPosSale(storeUser, { ...input, requestId });
-
-    const afterDashboard = await listDashboard(storeUser);
-    const afterById = new Map(afterDashboard.inventory.map((item) => [item.id, item]));
-    for (const line of input.items) {
-      const beforeItem = beforeById.get(line.inventoryItemId);
-      if (!beforeItem) continue;
-      const afterOnHand = afterById.get(line.inventoryItemId)?.quantityOwned ?? 0;
-      const actualInventoryReduction = Math.max(0, beforeItem.quantityOwned - afterOnHand);
-      const locationReduction = Math.min(line.quantity, actualInventoryReduction);
-      if (locationReduction > 0) {
-        await consumeInventoryPhysicalQuantity(
-          line.inventoryItemId,
-          "IN_STORE",
-          locationReduction,
-          beforeItem.quantityOwned
-        );
-      }
-    }
 
     const actorLabel = String(user.role) === "CASHIER" ? "cashier" : "admin";
     await logAudit({
