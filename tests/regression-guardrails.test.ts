@@ -240,6 +240,8 @@ test("POS Square-style flow keeps Charge reachable and separates customer/paymen
   assert.match(saleViewportGuardCss, /\.pos-search-panel\)[\s\S]*display: flex !important/);
   assert.match(saleViewportGuardCss, /\.saleViewportGuard \{[\s\S]*height: var\(--pos-visible-height, 100dvh\)/);
   assert.match(saleViewportGuardCss, /\.saleViewportGuard \{[\s\S]*overflow: hidden/);
+  assert.match(saleViewportGuardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: static !important/);
+  assert.doesNotMatch(saleViewportGuardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: fixed !important/);
   assert.match(saleViewportGuardCss, /body\[data-pos-viewport-locked="true"\]\[data-pos-home-screen="true"\]\)[\s\S]*position: static !important/);
   assert.match(saleViewportGuardCss, /\.pos-result-grid\)[\s\S]*overflow-y: auto !important/);
   assert.match(saleViewportGuardCss, /\.pos-cart-panel\)[\s\S]*overflow: hidden !important/);

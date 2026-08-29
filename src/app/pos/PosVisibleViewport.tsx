@@ -26,9 +26,18 @@ function checkoutIsActive() {
 
 function isHomeScreenMode() {
   const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+  const url = new URL(window.location.href);
+  const userAgent = window.navigator.userAgent || "";
+  const platform = window.navigator.platform || "";
+  const appleTouchDevice =
+    window.navigator.maxTouchPoints > 1 &&
+    (/iPad|iPhone|iPod/.test(userAgent) || platform === "MacIntel" || /Macintosh/.test(userAgent));
+
   return Boolean(
     window.matchMedia?.("(display-mode: standalone)").matches ||
-      navigatorWithStandalone.standalone
+      navigatorWithStandalone.standalone ||
+      url.searchParams.get("source") === "pos-pwa" ||
+      appleTouchDevice
   );
 }
 

@@ -65,6 +65,8 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(visibleGuard, /const HOME_SCREEN_ATTRIBUTE = "data-pos-home-screen"/);
   assert.match(visibleGuard, /display-mode: standalone/);
   assert.match(visibleGuard, /navigatorWithStandalone\.standalone/);
+  assert.match(visibleGuard, /url\.searchParams\.get\("source"\) === "pos-pwa"/);
+  assert.match(visibleGuard, /window\.navigator\.maxTouchPoints > 1/);
   assert.match(visibleGuard, /const ALLOWED_SCROLL_SELECTOR/);
   assert.match(visibleGuard, /\.pos-result-grid/);
   assert.match(visibleGuard, /\.pos-cart-lines:not\(\.is-empty\)/);
@@ -109,7 +111,8 @@ test("iPad POS sale screen keeps the Charge footer inside the visible viewport",
   assert.match(guardCss, /\.saleViewportGuard \{[\s\S]*overflow: hidden/);
   assert.match(guardCss, /html\[data-pos-viewport-locked="true"\]/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]/);
-  assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: fixed !important/);
+  assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: static !important/);
+  assert.doesNotMatch(guardCss, /body\[data-pos-viewport-locked="true"\]\)[\s\S]*position: fixed !important/);
   assert.match(guardCss, /body\[data-pos-viewport-locked="true"\]\[data-pos-home-screen="true"\]\)[\s\S]*position: static !important/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*height: var\(--pos-sale-root-height, var\(--pos-visible-height, 100dvh\)\) !important/);
   assert.match(guardCss, /\[data-pos-register-view="checkout"\]\[data-pos-authenticated="true"\]\)[\s\S]*overflow: hidden !important/);

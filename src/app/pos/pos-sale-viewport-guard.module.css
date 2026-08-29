@@ -8,12 +8,7 @@
   overscroll-behavior: none;
 }
 
-/*
- * Register app lock. The iPad browser can still page-scroll even when the
- * inner sale columns are scrollable; when that happens the whole POS surface
- * drifts upward and the fixed checkout dock looks cropped. PosVisibleViewport
- * enables this only for the authenticated Checkout tab.
- */
+/* Register app lock. Keep the document still and let the POS columns scroll. */
 :global(html[data-pos-viewport-locked="true"]),
 :global(body[data-pos-viewport-locked="true"]) {
   width: 100% !important;
@@ -25,16 +20,15 @@
 }
 
 :global(body[data-pos-viewport-locked="true"]) {
-  position: fixed !important;
-  inset: 0 !important;
+  position: static !important;
+  inset: auto !important;
   margin: 0 !important;
 }
 
 /*
  * Home Screen POS runs without Safari's browser chrome and can rubber-band the
- * visual viewport separately from the layout viewport. A fixed body turns that
- * into a cropped app snapshot, so standalone mode keeps the document in normal
- * flow while the product grid and Current Sale list remain the scroll surfaces.
+ * visual viewport separately from the layout viewport. Keep this explicit so a
+ * future fixed-body rule cannot turn the register into a cropped app snapshot.
  */
 :global(body[data-pos-viewport-locked="true"][data-pos-home-screen="true"]) {
   position: static !important;
