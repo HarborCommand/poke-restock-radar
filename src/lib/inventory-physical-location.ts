@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 export type InventoryPhysicalLocation = "IN_STORE" | "WAREHOUSE";
 
@@ -15,6 +16,8 @@ type LocationRow = {
   inStoreQuantity: number | null;
   warehouseQuantity: number | null;
 };
+
+type InventoryPhysicalLocationClient = PrismaClient | Prisma.TransactionClient;
 
 let locationTableReady: Promise<void> | null = null;
 
@@ -77,13 +80,14 @@ export async function ensureInventoryPhysicalLocationTable() {
 async function writeBalance(
   inventoryItemId: string,
   inStoreQuantity: number,
-  warehouseQuantity: number
+  warehouseQuantity: number,
+  client: InventoryPhysicalLocationClient = prisma
 ) {
   const normalizedInStore = normalizeQuantity(inStoreQuantity);
   const normalizedWarehouse = normalizeQuantity(warehouseQuantity);
   const location = compatibilityLocation(normalizedInStore, normalizedWarehouse);
 
-  await prisma.$executeRaw`
+  await client.$executeRaw`
     INSERT INTO "InventoryPhysicalLocation" (
       "inventoryItemId",
       "location",
@@ -139,10 +143,11 @@ function reconcileRow(row: LocationRow | undefined, onHandQuantity: number) {
 
 export async function getInventoryPhysicalLocationBalance(
   inventoryItemId: string,
-  onHandQuantity: number
+  onHandQuantity: number,
+  client: InventoryPhysicalLocationClient = prisma
 ): Promise<InventoryPhysicalLocationBalance> {
   await ensureInventoryPhysicalLocationTable();
-  const rows = await prisma.$queryRaw<LocationRow[]>`
+  const rows = await client.$queryRaw<LocationRow[]>`
     SELECT "inventoryItemId", "location", "inStoreQuantity", "warehouseQuantity"
     FROM "InventoryPhysicalLocation"
     WHERE "inventoryItemId" = ${inventoryItemId}
@@ -157,7 +162,7 @@ export async function getInventoryPhysicalLocationBalance(
     normalizeQuantity(row.inStoreQuantity) !== balance.inStoreQuantity ||
     normalizeQuantity(row.warehouseQuantity) !== balance.warehouseQuantity
   ) {
-    await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity);
+    await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity, client);
   }
 
   return balance;
@@ -196,17 +201,18 @@ export async function addInventoryPhysicalQuantity(
   inventoryItemId: string,
   location: InventoryPhysicalLocation,
   quantity: number,
-  onHandQuantityAfter: number
+  onHandQuantityAfter: number,
+  client: InventoryPhysicalLocationClient = prisma
 ) {
   const addedQuantity = normalizeQuantity(quantity);
   const baseOnHand = Math.max(0, normalizeQuantity(onHandQuantityAfter) - addedQuantity);
-  const balance = await getInventoryPhysicalLocationBalance(inventoryItemId, baseOnHand);
+  const balance = await getInventoryPhysicalLocationBalance(inventoryItemId, baseOnHand, client);
 
   if (location === "IN_STORE") balance.inStoreQuantity += addedQuantity;
   else balance.warehouseQuantity += addedQuantity;
   balance.onHandQuantity = normalizeQuantity(onHandQuantityAfter);
 
-  await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity);
+  await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity, client);
   return balance;
 }
 
@@ -215,13 +221,14 @@ export async function transferInventoryPhysicalQuantity(
   fromLocation: InventoryPhysicalLocation,
   toLocation: InventoryPhysicalLocation,
   quantity: number,
-  onHandQuantity: number
+  onHandQuantity: number,
+  client: InventoryPhysicalLocationClient = prisma
 ) {
   if (fromLocation === toLocation) throw new Error("Choose a different destination location.");
   const moveQuantity = normalizeQuantity(quantity);
   if (moveQuantity <= 0) throw new Error("Choose at least 1 unit to move.");
 
-  const balance = await getInventoryPhysicalLocationBalance(inventoryItemId, onHandQuantity);
+  const balance = await getInventoryPhysicalLocationBalance(inventoryItemId, onHandQuantity, client);
   const available = fromLocation === "IN_STORE" ? balance.inStoreQuantity : balance.warehouseQuantity;
   if (moveQuantity > available) {
     const label = fromLocation === "IN_STORE" ? "In Store" : "Warehouse / Home";
@@ -236,7 +243,7 @@ export async function transferInventoryPhysicalQuantity(
     balance.inStoreQuantity += moveQuantity;
   }
 
-  await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity);
+  await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity, client);
   return balance;
 }
 
@@ -244,12 +251,13 @@ export async function consumeInventoryPhysicalQuantity(
   inventoryItemId: string,
   location: InventoryPhysicalLocation,
   quantity: number,
-  onHandQuantityBefore: number
+  onHandQuantityBefore: number,
+  client: InventoryPhysicalLocationClient = prisma
 ) {
   const consumedQuantity = normalizeQuantity(quantity);
-  if (consumedQuantity <= 0) return getInventoryPhysicalLocationBalance(inventoryItemId, onHandQuantityBefore);
+  if (consumedQuantity <= 0) return getInventoryPhysicalLocationBalance(inventoryItemId, onHandQuantityBefore, client);
 
-  const balance = await getInventoryPhysicalLocationBalance(inventoryItemId, onHandQuantityBefore);
+  const balance = await getInventoryPhysicalLocationBalance(inventoryItemId, onHandQuantityBefore, client);
   const available = location === "IN_STORE" ? balance.inStoreQuantity : balance.warehouseQuantity;
   if (consumedQuantity > available) throw new Error("Not enough inventory is assigned to this location.");
 
@@ -257,7 +265,7 @@ export async function consumeInventoryPhysicalQuantity(
   else balance.warehouseQuantity -= consumedQuantity;
   balance.onHandQuantity = Math.max(0, balance.onHandQuantity - consumedQuantity);
 
-  await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity);
+  await writeBalance(inventoryItemId, balance.inStoreQuantity, balance.warehouseQuantity, client);
   return balance;
 }
 
